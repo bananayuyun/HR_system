@@ -4,6 +4,8 @@
 .env.*
 !.env.example
 !frontend/.env.development
+backend/src/main/resources/application-test.yml
+backend/src/main/resources/application-prod.yml
 node_modules/
 dist/
 target/

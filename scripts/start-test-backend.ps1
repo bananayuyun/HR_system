@@ -3,7 +3,7 @@ param([switch]$SkipBuild)
 Import-HrEnvironment
 if (-not $env:TEST_DB_URL -or $env:TEST_DB_URL -notmatch '/hrms_test[?]') { throw 'TEST_DB_URL must identify the isolated hrms_test database.' }
 $env:DB_URL = $env:TEST_DB_URL
-$env:SPRING_PROFILES_ACTIVE = 'test'
+$env:SPRING_PROFILES_ACTIVE = 'dev'
 $env:HR_SEED_DEMO = 'true'
 $env:SERVER_PORT = '8091'
 $env:HR_UPLOAD_DIRECTORY = '../.local/test-uploads'
