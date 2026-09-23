@@ -674,7 +674,6 @@ async function saved(message, close = true) {
               <span class="login-illustration-node node-four" />
             </div>
           </div>
-          <span class="login-intro-foot">人力资源平台</span>
         </div>
         <div class="login-form-panel">
           <form class="login-card" @submit.prevent="loginSubmit">
@@ -684,7 +683,7 @@ async function saved(message, close = true) {
             </div>
             <span class="login-welcome">欢迎使用</span>
             <h2>登录账号</h2>
-            <p>请输入账号和密码，继续使用人力资源平台。</p>
+            <p>请输入账号和密码。</p>
             <div class="v-field">
               <label for="username">账号</label>
               <input

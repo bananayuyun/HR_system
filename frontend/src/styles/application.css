@@ -19,7 +19,6 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   overflow: hidden;
   padding: 40px 44px;
   color: #fff;
@@ -57,13 +56,13 @@
 .login-intro-mark {
   width: 34px;
   height: 34px;
-  background: #fff url('/favicon.svg') center / 34px no-repeat;
+  background: url('/favicon.svg') center / contain no-repeat;
   border-radius: 8px;
 }
 .login-intro-content {
   position: relative;
   z-index: 1;
-  padding-top: 48px;
+  margin: auto 0;
 }
 .login-eyebrow {
   color: #c7dcff;
@@ -124,12 +123,6 @@
 .login-illustration-node.node-four {
   right: 12%;
 }
-.login-intro-foot {
-  position: relative;
-  z-index: 1;
-  color: #c7dcff;
-  font-size: 12px;
-}
 .login-form-panel {
   display: grid;
   place-items: center;
@@ -139,14 +132,11 @@
   width: min(100%, 360px);
 }
 .login-card .brand {
-  min-width: 0;
-  margin-bottom: 58px;
-  gap: 10px;
+  display: none;
 }
+.v-top .brand .logo,
 .login-card .brand .logo {
-  width: 28px;
-  height: 28px;
-  background-size: contain;
+  background: url('/favicon.svg') center / contain no-repeat;
 }
 .login-card .brand b {
   color: #182230;
@@ -218,7 +208,14 @@
     padding: 40px 28px;
   }
   .login-card .brand {
+    display: flex;
+    min-width: 0;
     margin-bottom: 52px;
+    gap: 10px;
+  }
+  .login-card .brand .logo {
+    width: 28px;
+    height: 28px;
   }
 }
 .auth-name {
