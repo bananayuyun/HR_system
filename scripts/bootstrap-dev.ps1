@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $configPath)) {
     $encryptionKey = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
     $lines = @('# Local development only. Never copy this file to production.',
         'SPRING_PROFILES_ACTIVE=dev', "DB_URL=jdbc:mysql://127.0.0.1:${Port}/hrms_dev?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false",
-        'DB_USERNAME=hr_app', "DB_PASSWORD=$dbPassword", "HR_ENCRYPTION_KEY=$encryptionKey", 'HR_SEED_DEMO=false',
+        'DB_USERNAME=hr_app', "DB_PASSWORD=$dbPassword", "HR_ENCRYPTION_KEY=$encryptionKey", 'HR_SEED_DEMO=true',
         'SERVER_PORT=8090', 'HR_UPLOAD_DIRECTORY=../.local/uploads',
         'HR_ALLOWED_ORIGINS=http://127.0.0.1:5180,http://localhost:5180,http://127.0.0.1:8090,http://localhost:8090',
         "TEST_DB_URL=jdbc:mysql://127.0.0.1:${Port}/hrms_test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false")
