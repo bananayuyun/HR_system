@@ -1,0 +1,462 @@
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #edf3fc;
+  padding: clamp(16px, 4vw, 48px);
+}
+.login-shell {
+  width: min(1040px, 100%);
+  min-height: min(660px, calc(100vh - 96px));
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 24px 70px #123a8030;
+}
+.login-intro {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 40px 44px;
+  color: #fff;
+  background: linear-gradient(145deg, #0d3c9d, #1555d4 52%, #3379ed);
+}
+.login-intro::before,
+.login-intro::after {
+  content: '';
+  position: absolute;
+  border: 1px solid #ffffff1f;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.login-intro::before {
+  width: 530px;
+  height: 530px;
+  right: -270px;
+  top: -270px;
+}
+.login-intro::after {
+  width: 490px;
+  height: 490px;
+  left: -270px;
+  bottom: -320px;
+}
+.login-intro-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 19px;
+  font-weight: 650;
+}
+.login-intro-mark {
+  width: 34px;
+  height: 34px;
+  background: #fff url('/favicon.svg') center / 34px no-repeat;
+  border-radius: 8px;
+}
+.login-intro-content {
+  position: relative;
+  z-index: 1;
+  padding-top: 48px;
+}
+.login-eyebrow {
+  color: #c7dcff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.19em;
+}
+.login-intro h1 {
+  margin: 20px 0 16px;
+  color: #fff;
+  font-size: clamp(30px, 3vw, 39px);
+  font-weight: 650;
+  line-height: 1.42;
+  letter-spacing: 0.02em;
+}
+.login-intro p {
+  margin: 0;
+  color: #e3eeff;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.login-illustration {
+  position: relative;
+  width: min(330px, 100%);
+  height: 142px;
+  margin: 46px auto 0;
+  border: 1px solid #ffffff3d;
+  border-radius: 18px;
+  background: #ffffff1c;
+  box-shadow: 0 16px 36px #072b7a38;
+}
+.login-illustration-line {
+  position: absolute;
+  top: 50%;
+  left: 17%;
+  right: 17%;
+  border-top: 2px solid #bcd7ff;
+}
+.login-illustration-node {
+  position: absolute;
+  top: calc(50% - 16px);
+  width: 32px;
+  height: 32px;
+  border: 7px solid #fff;
+  border-radius: 50%;
+  background: #6ba6ff;
+  box-shadow: 0 4px 12px #072b7a45;
+}
+.login-illustration-node.node-one {
+  left: 12%;
+}
+.login-illustration-node.node-two {
+  left: 36%;
+}
+.login-illustration-node.node-three {
+  left: 60%;
+}
+.login-illustration-node.node-four {
+  right: 12%;
+}
+.login-intro-foot {
+  position: relative;
+  z-index: 1;
+  color: #c7dcff;
+  font-size: 12px;
+}
+.login-form-panel {
+  display: grid;
+  place-items: center;
+  padding: 64px clamp(28px, 5vw, 72px);
+}
+.login-card {
+  width: min(100%, 360px);
+}
+.login-card .brand {
+  min-width: 0;
+  margin-bottom: 58px;
+  gap: 10px;
+}
+.login-card .brand .logo {
+  width: 28px;
+  height: 28px;
+  background-size: contain;
+}
+.login-card .brand b {
+  color: #182230;
+  font-size: 18px;
+}
+.login-welcome {
+  color: #1555d4;
+  font-size: 13px;
+  font-weight: 650;
+}
+.login-card h2 {
+  margin: 10px 0 8px;
+  color: #17243c;
+  font-size: 30px;
+  font-weight: 650;
+}
+.login-card > p {
+  color: #66758d;
+  margin: 0 0 36px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.login-card .v-field {
+  margin-bottom: 22px;
+}
+.login-card .v-field label {
+  display: block;
+  margin-bottom: 8px;
+  color: #34445d;
+  font-weight: 600;
+}
+.login-card .inp {
+  width: 100%;
+  height: 44px;
+  border-radius: 7px;
+  background: #fbfcff;
+}
+.login-card .inp:focus {
+  background: #fff;
+}
+.login-card .btn {
+  width: 100%;
+  height: 44px;
+  justify-content: center;
+  margin-top: 12px;
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-error {
+  color: #c52222 !important;
+  margin: 0 0 8px !important;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .login-page {
+    padding: 16px;
+  }
+  .login-shell {
+    min-height: calc(100vh - 32px);
+    display: block;
+  }
+  .login-intro {
+    display: none;
+  }
+  .login-form-panel {
+    min-height: calc(100vh - 32px);
+    padding: 40px 28px;
+  }
+  .login-card .brand {
+    margin-bottom: 52px;
+  }
+}
+.auth-name {
+  font-size: 13px;
+  color: #606266;
+}
+.auth-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.auth-actions .v-link {
+  font-size: 12px;
+}
+.hr-loading {
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #606266;
+}
+.hr-error {
+  padding: 24px;
+  color: #d40000;
+}
+.v-busy {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  background: #fff;
+  border: 1px solid #dcdde0;
+  border-radius: 4px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 12px #0001;
+  z-index: 3000;
+}
+.v-dialog form {
+  margin: 0;
+}
+.w3-control .ant-picker {
+  width: 100%;
+}
+.v-table-host .tw {
+  position: relative;
+}
+.tbl td .v-link.danger,
+.v-link.danger {
+  color: #d40000;
+}
+.w-tools-right {
+  position: relative;
+}
+.v-title-tools button {
+  flex: none;
+}
+.form-section + .form-section {
+  margin-top: 24px;
+}
+.v-dialog .v-field.full {
+  grid-column: 1/-1;
+}
+.v-preview-frame {
+  width: 100%;
+  height: 500px;
+  border: 1px solid #ebedf0;
+}
+.dropzone {
+  padding: 28px;
+  border: 1px dashed #bcc7d8;
+  background: #fafbfc;
+  text-align: center;
+  border-radius: 4px;
+}
+.dropzone input {
+  margin-top: 12px;
+  max-width: 100%;
+}
+.roster-org-search {
+  margin-bottom: 8px;
+}
+.settings-table {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-toolbar {
+  margin-bottom: 16px;
+}
+.column-popup {
+  position: fixed;
+  right: 32px;
+  top: 240px;
+  z-index: 2100;
+  background: #fff;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sensitive-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.error-retry {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.v-dialog .w3-control .ant-select-selector {
+  min-height: 32px;
+}
+.v-main > .w3-advanced-strip {
+  margin-bottom: 16px;
+}
+.employee-fields .v-link {
+  font-size: 12px;
+}
+.action-form-note {
+  margin-bottom: 20px;
+}
+.employee-detail .employee-fields dd {
+  background: none;
+}
+.w-dialog-full {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+}
+.w3-org-row .w-tool {
+  z-index: 1;
+}
+.v-dialog.employee-section-editor .v-form {
+  grid-template-columns: 1fr;
+}
+.v-table-host .tbl td.w3-pinned,
+.v-table-host .tbl th.w3-pinned {
+  position: sticky;
+}
+.v-table-host .pager {
+  justify-content: flex-end;
+}
+.v-table-host .pager > .w3-control {
+  width: 76px;
+  flex: none;
+}
+.w-list-header__aside .w-filter-actions {
+  height: 32px;
+}
+.v-field input[type='file'] {
+  height: auto;
+  min-height: 32px;
+}
+.v-dialog .ant-select-selection-overflow {
+  flex-wrap: wrap;
+}
+.ant-picker-dropdown,
+.ant-select-dropdown {
+  z-index: 2200 !important;
+}
+.v-content[data-page='settings'] > .w-toolbar {
+  margin-bottom: 16px;
+}
+.request-capacity-warning {
+  color: #ed6a0c;
+}
+.request-capacity-ok {
+  color: #2da641;
+}
+.v-dialog .v-kv dd pre {
+  white-space: pre-wrap;
+  margin: 0;
+  font: inherit;
+}
+.v-table-host .v-actions > div {
+  min-height: 35px;
+}
+.v-table-host .w-toolbar .btn {
+  border-radius: 4px;
+}
+.v-empty .wi {
+  font-size: 28px;
+}
+.w3-native-date {
+  display: none;
+}
+.notice-inline {
+  font-size: 13px;
+  color: #606266;
+}
+.v-uploading {
+  color: #1555d4;
+  font-size: 13px;
+}
+.v-history-empty {
+  padding: 24px;
+  text-align: center;
+  color: #969799;
+}
+.qr-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #dcdde0;
+  padding: 20px;
+  margin: 8px;
+  max-width: 220px;
+}
+.qr-card img {
+  width: 180px;
+  height: 180px;
+}
+.qr-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.v-top .brand b {
+  line-height: 26px;
+}
+.btn:focus-visible {
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .req-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .auth-name {
+    display: none;
+  }
+  .v-top .v-right {
+    gap: 8px;
+  }
+  .auth-actions {
+    gap: 8px;
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "hr-system",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "extract:assets": "node scripts/extract-prototype-assets.mjs",
+    "format": "prettier --write src scripts vite.config.js package.json",
+    "format:check": "prettier --check src scripts vite.config.js package.json"
+  },
+  "dependencies": {
+    "ant-design-vue": "4.2.6",
+    "dayjs": "1.11.18",
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
+    "qrcode": "1.5.4",
+    "vue": "3.5.22"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.1",
+    "pixelmatch": "7.2.0",
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0",
+    "prettier": "3.6.2",
+    "vite": "7.3.5"
+  }
+}

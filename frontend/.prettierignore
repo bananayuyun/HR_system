@@ -1,0 +1,7 @@
+node_modules/
+dist/
+public/
+test-artifacts/
+pnpm-lock.yaml
+src/styles/prototype.css
+src/config/prototype-metadata.json

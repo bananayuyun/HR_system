@@ -1,0 +1,14 @@
+.local/
+.tools/
+.env
+.env.*
+!.env.example
+!frontend/.env.development
+node_modules/
+dist/
+target/
+*.log
+playwright-report/
+test-results/
+frontend/test-artifacts/
+.DS_Store

@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: hr-platform
+  profiles:
+    default: dev
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3307/hrms?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC}
+    username: ${DB_USERNAME:hr_app}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  flyway:
+    enabled: true
+    clean-disabled: true
+  jackson:
+    time-zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 24MB
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        name: HR_SESSION
+        http-only: true
+        same-site: strict
+        secure: ${COOKIE_SECURE:false}
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+hr:
+  encryption-key: ${HR_ENCRYPTION_KEY:}
+  upload-directory: ${HR_UPLOAD_DIRECTORY:./data/uploads}
+  initial-admin-password: ${HR_INITIAL_ADMIN_PASSWORD:admin123}
+  initial-manager-password: ${HR_INITIAL_MANAGER_PASSWORD:manager123}
+  allowed-origins: ${HR_ALLOWED_ORIGINS:http://127.0.0.1:5180,http://localhost:5180,http://127.0.0.1:8090,http://localhost:8090}
+  seed-demo: ${HR_SEED_DEMO:false}

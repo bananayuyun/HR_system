@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+.local
+.tools
+**/node_modules
+**/target
+**/dist
+**/test-artifacts
+**/*.log
+人力资源平台原型-v1.html

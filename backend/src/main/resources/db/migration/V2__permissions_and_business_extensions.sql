@@ -1,0 +1,61 @@
+ALTER TABLE sys_user ADD COLUMN display_name VARCHAR(100), ADD COLUMN org_id BIGINT UNSIGNED NULL, ADD COLUMN password_changed_at DATETIME NULL, ADD CONSTRAINT fk_user_org FOREIGN KEY (org_id) REFERENCES org_department(id);
+CREATE TABLE sys_permission (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, code VARCHAR(80) NOT NULL UNIQUE, name VARCHAR(160) NOT NULL);
+CREATE TABLE sys_role_permission (role_id BIGINT UNSIGNED NOT NULL, permission_id BIGINT UNSIGNED NOT NULL, PRIMARY KEY(role_id,permission_id), CONSTRAINT fk_rp_role FOREIGN KEY(role_id) REFERENCES sys_role(id), CONSTRAINT fk_rp_permission FOREIGN KEY(permission_id) REFERENCES sys_permission(id));
+CREATE TABLE sys_setting (setting_key VARCHAR(64) PRIMARY KEY, value_json JSON NOT NULL, version INT NOT NULL DEFAULT 0);
+ALTER TABLE org_department ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0;
+ALTER TABLE grade ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0, ADD COLUMN deleted_at DATETIME NULL;
+ALTER TABLE job_position ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0, ADD COLUMN deleted_at DATETIME NULL;
+ALTER TABLE employee ADD COLUMN extra JSON NULL;
+ALTER TABLE recruitment_request ADD COLUMN extra JSON NULL, ADD COLUMN deleted_at DATETIME NULL;
+ALTER TABLE candidate ADD COLUMN code VARCHAR(64) NULL, ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0, ADD COLUMN deleted_at DATETIME NULL, ADD UNIQUE KEY uk_candidate_code(code);
+ALTER TABLE interview ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0;
+ALTER TABLE onboarding_record ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0;
+ALTER TABLE asset ADD COLUMN extra JSON NULL, ADD COLUMN version INT NOT NULL DEFAULT 0, ADD COLUMN deleted_at DATETIME NULL, ADD COLUMN org_id BIGINT UNSIGNED NULL, ADD CONSTRAINT fk_asset_org FOREIGN KEY(org_id) REFERENCES org_department(id), ADD CONSTRAINT ck_asset_public_owner CHECK(public_asset=FALSE OR owner_employee_id IS NULL);
+ALTER TABLE asset DROP CHECK ck_asset_owner;
+ALTER TABLE asset ADD CONSTRAINT ck_asset_owner CHECK((status='IN_USE' AND (owner_employee_id IS NOT NULL OR public_asset=TRUE)) OR status<>'IN_USE');
+ALTER TABLE employee_sensitive ADD COLUMN extra_cipher BLOB NULL;
+ALTER TABLE employee_file ADD COLUMN size_bytes BIGINT NOT NULL DEFAULT 0, ADD COLUMN mime_type VARCHAR(128);
+ALTER TABLE employee_change_log ADD COLUMN deleted_at DATETIME NULL;
+ALTER TABLE import_log MODIFY import_type ENUM('EMPLOYEE','ASSET','REQUEST','GRADE','TIMELINE') NOT NULL;
+CREATE TABLE candidate_file (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, candidate_id BIGINT UNSIGNED NOT NULL, file_name VARCHAR(255) NOT NULL, object_key VARCHAR(512) NOT NULL, size_bytes BIGINT NOT NULL, mime_type VARCHAR(128), status ENUM('ACTIVE','DELETED') NOT NULL DEFAULT 'ACTIVE', uploaded_by BIGINT UNSIGNED NOT NULL, uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT fk_cf_candidate FOREIGN KEY(candidate_id) REFERENCES candidate(id), CONSTRAINT fk_cf_user FOREIGN KEY(uploaded_by) REFERENCES sys_user(id));
+CREATE TABLE request_participant (request_id BIGINT UNSIGNED NOT NULL, employee_id BIGINT UNSIGNED NOT NULL, participant_role ENUM('OWNER','SCREENER','FIRST','SECOND') NOT NULL, PRIMARY KEY(request_id,employee_id,participant_role), CONSTRAINT fk_rpart_req FOREIGN KEY(request_id) REFERENCES recruitment_request(id), CONSTRAINT fk_rpart_employee FOREIGN KEY(employee_id) REFERENCES employee(id));
+INSERT INTO sys_permission(code,name) VALUES
+ ('roster:read','花名册查看'),('emps:write','员工档案维护'),('emps:sensitive','员工敏感资料查看'),
+ ('orgs:read','组织查看'),('orgs:write','组织维护'),('jobs:read','岗位查看'),('jobs:write','岗位维护'),('grades:read','职级查看'),('grades:write','职级维护'),
+ ('reqs:read','需求查看'),('reqs:write','需求维护'),('pool:read','简历查看'),('candidates:write','候选人维护'),('screening:read','筛选查看'),('screening:hr','HR筛选'),('screening:department','部门筛选'),
+ ('interviews:read','面试查看'),('interviews:write','面试安排评价'),('offers:read','入职查看'),('offers:write','入职办理'),('assets:read','资产查看'),('assets:write','资产维护'),('settings:read','基础信息查看'),('settings:write','基础信息维护'),('imports:write','批量导入'),('exports:read','数据导出'),('audit:read','审计查看');
+INSERT INTO sys_role_permission(role_id,permission_id) SELECT r.id,p.id FROM sys_role r CROSS JOIN sys_permission p WHERE r.code='HR_ADMIN';
+INSERT INTO sys_role_permission(role_id,permission_id) SELECT r.id,p.id FROM sys_role r CROSS JOIN sys_permission p WHERE r.code='DEPT_MANAGER' AND p.code IN ('roster:read','orgs:read','jobs:read','jobs:write','grades:read','reqs:read','reqs:write','pool:read','screening:read','screening:department','interviews:read','interviews:write','offers:read','assets:read','exports:read');
+INSERT INTO sys_setting(setting_key,value_json) VALUES ('rules',JSON_OBJECT('enabled',false,'workdays',true,'times',JSON_ARRAY('10:00','14:00','17:00'),'channel','站内待办','lastPreview',''));
+
+INSERT INTO org_department(code,name,parent_id) VALUES ('ORG_ROOT','中数股份',NULL);
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_01','综合管理部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_02','财务管理部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_03','出纳组',id FROM org_department WHERE code='ORG_02';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_04','会计组',id FROM org_department WHERE code='ORG_02';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_05','人事行政部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_06','合约管理部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_07','市场部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_08','售前组',id FROM org_department WHERE code='ORG_07';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_09','空间设计部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_10','方案设计组',id FROM org_department WHERE code='ORG_09';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_11','销售部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_12','供应链管理部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_13','项目部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_14','项目管理组',id FROM org_department WHERE code='ORG_13';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_15','施工图组',id FROM org_department WHERE code='ORG_13';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_16','场馆交付组',id FROM org_department WHERE code='ORG_13';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_17','平面组',id FROM org_department WHERE code='ORG_13';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_18','开发部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_19','前端开发组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_20','测试组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_21','后端开发组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_22','IOT 开发组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_23','UE 开发组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_24','AI 组',id FROM org_department WHERE code='ORG_18';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_25','产品部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_26','产品运营中心',id FROM org_department WHERE code='ORG_25';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_27','产品设计中心',id FROM org_department WHERE code='ORG_25';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_28','产品制作中心',id FROM org_department WHERE code='ORG_25';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_29','外联部',id FROM org_department WHERE code='ORG_ROOT';
+INSERT INTO org_department(code,name,parent_id) SELECT 'ORG_30','其他',id FROM org_department WHERE code='ORG_ROOT';
