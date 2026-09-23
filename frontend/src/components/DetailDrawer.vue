@@ -45,12 +45,15 @@ watch(
 const legacyCandidate = computed(
   () => props.type === 'candidates' && !['interviews', 'offers'].includes(props.route),
 );
+const employeeWritable = computed(() => can('emps:write') && detail.value.status !== '已离职');
 const wide = computed(
   () => ['emps', 'jobs', 'grades', 'orgs'].includes(props.type) || legacyCandidate.value,
 );
 const title = computed(() =>
   props.type === 'emps'
-    ? '员工档案'
+    ? detail.value.status === '已离职'
+      ? '离职人员档案'
+      : '员工档案'
     : props.type === 'candidates'
       ? props.route === 'offers'
         ? '入职人员详情'
@@ -331,7 +334,9 @@ const blue = (s) =>
     <template v-if="type === 'emps'">
       <div class="employee-profile-head"
         ><div class="v-drawer-intro"
-          ><h2>{{ detail.name }}</h2
+          ><h2
+            >{{ detail.name }}
+            <span v-if="detail.status === '已离职'" class="v-badge">已离职</span></h2
           ><span class="v-muted"
             >{{ detail.id }} · {{ deptName(detail.dept) }} · {{ jobName(detail.job) }}</span
           ></div
@@ -423,7 +428,7 @@ const blue = (s) =>
             ><header
               ><h4 class="sec-h">{{ section[1] }}</h4
               ><button
-                v-if="can('emps:write')"
+                v-if="employeeWritable"
                 class="v-link"
                 :aria-label="'编辑' + section[1]"
                 @click="action('sectionEdit', { section: section[0] })"
@@ -470,7 +475,7 @@ const blue = (s) =>
     <template v-else-if="tab === 'files'"
       ><div class="employee-section-actions"
         ><span class="v-muted">档案材料 {{ files.length }} 份</span
-        ><button v-if="can('emps:write')" class="btn pri-btn" @click="action('employeeUpload')"
+        ><button v-if="employeeWritable" class="btn pri-btn" @click="action('employeeUpload')"
           >上传材料</button
         ></div
       ><div class="employee-material-list"
@@ -482,7 +487,7 @@ const blue = (s) =>
               : '未上传'
           }}</span
           ><button
-            v-if="can('emps:write')"
+            v-if="employeeWritable"
             class="v-link"
             @click="action('employeeUpload', { category: typeName })"
             >上传</button
@@ -498,11 +503,7 @@ const blue = (s) =>
           ></div
         ><button class="v-link" @click="action('previewFile', { file })">预览</button
         ><button class="v-link" @click="download(file)">下载</button
-        ><button
-          v-if="can('emps:write')"
-          class="v-link"
-          :disabled="busy"
-          @click="pendingFile = file"
+        ><button v-if="employeeWritable" class="v-link" :disabled="busy" @click="pendingFile = file"
           >删除</button
         ></div
       ><div v-if="!files.length" class="v-empty"
@@ -510,7 +511,7 @@ const blue = (s) =>
       ></template
     >
     <template v-else-if="tab === 'timeline' || tab === 'history'"
-      ><div v-if="tab === 'timeline' && can('emps:write')" class="employee-section-actions"
+      ><div v-if="tab === 'timeline' && employeeWritable" class="employee-section-actions"
         ><span class="v-muted">成长记录 {{ history.length }} 条</span
         ><div class="employee-section-buttons"
           ><button class="btn" @click="action('timelineImport')">导入成长记录</button
@@ -522,7 +523,7 @@ const blue = (s) =>
           ><span class="v-muted"
             >{{ item.date || item.createdAt }} · {{ item.operator || item.actorName }}</span
           ><p>{{ item.detail || item.reason || item.description }}</p
-          ><div v-if="tab === 'timeline' && item.editable && can('emps:write')"
+          ><div v-if="tab === 'timeline' && item.editable && employeeWritable"
             ><button class="v-link" @click="action('timelineEdit', { item })">编辑</button>
             <button class="v-link" @click="action('timelineDelete', { item })">删除</button></div
           ></li
@@ -726,7 +727,10 @@ const blue = (s) =>
           class="btn"
           @click="action(detail.status === '已离职' ? 'reinstate' : 'leave')"
           >{{ detail.status === '已离职' ? '复职' : '办理离职' }}</button
-        ><button v-if="can('emps:write')" class="btn danger" @click="action('permanentDelete')"
+        ><button
+          v-if="can('emps:write') && detail.status === '已离职'"
+          class="btn danger"
+          @click="action('permanentDelete')"
           >彻底删除</button
         ></template
       >

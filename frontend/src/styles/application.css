@@ -400,6 +400,33 @@
 .v-table-host .w-toolbar .btn {
   border-radius: 4px;
 }
+.roster-view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #dcdde0;
+  border-radius: 4px;
+  background: #fff;
+}
+.roster-view-switch button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #606266;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.roster-view-switch button.on {
+  background: #1555d4;
+  color: #fff;
+}
+.roster-view-switch button:focus-visible {
+  outline: 2px solid #1555d4;
+  outline-offset: 2px;
+}
 .v-empty .wi {
   font-size: 28px;
 }

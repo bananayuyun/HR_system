@@ -23,7 +23,7 @@ const props = defineProps({
   selected: Set,
   editable: Boolean,
   isHr: Boolean,
-  archived: Boolean,
+  leftView: Boolean,
   loading: Boolean,
   resetKey: String,
 });
@@ -310,15 +310,38 @@ defineExpose({ cell, columns });
     id="table-host"
   >
     <div class="w-toolbar">
+      <div v-if="route === 'roster'" class="roster-view-switch" aria-label="花名册视图">
+        <button
+          type="button"
+          :class="{ on: !leftView }"
+          :aria-pressed="!leftView"
+          @click="action('rosterView', 'active')"
+          >在职花名册</button
+        >
+        <button
+          type="button"
+          :class="{ on: leftView }"
+          :aria-pressed="leftView"
+          @click="action('rosterView', 'left')"
+          >离职人员档案</button
+        >
+      </div>
       <template v-if="editable">
         <button
-          v-if="!['pool', 'screening', 'interviews', 'offers'].includes(route)"
+          v-if="
+            !['pool', 'screening', 'interviews', 'offers'].includes(route) &&
+            !(route === 'roster' && leftView)
+          "
           class="btn pri-btn"
           @click="action('add')"
           >新增</button
         >
         <button
-          v-if="isHr && ['roster', 'reqs', 'assets', 'grades'].includes(route) && !archived"
+          v-if="
+            isHr &&
+            ['roster', 'reqs', 'assets', 'grades'].includes(route) &&
+            !(route === 'roster' && leftView)
+          "
           class="btn"
           aria-label="导入菜单"
           :aria-expanded="importPopup"
@@ -527,15 +550,16 @@ defineExpose({ cell, columns });
                   <span class="v-sep" />
                   <button class="v-link" @click="action('audit', r)">日志</button>
                 </template>
-                <template v-if="route === 'roster' && isHr">
+                <template v-if="route === 'roster' && editable">
                   <span class="v-sep" />
+                  <button class="v-link" @click="action(leftView ? 'reinstate' : 'leave', r)">{{
+                    leftView ? '复职' : '办理离职'
+                  }}</button>
+                  <span v-if="leftView" class="v-sep" />
                   <button
-                    class="v-link"
-                    @click="action(r.status === '已离职' ? 'reinstate' : 'leave', r)"
-                    >{{ r.status === '已离职' ? '复职' : '办理离职' }}</button
-                  >
-                  <span class="v-sep" />
-                  <button class="v-link danger" @click="action('permanentDelete', r)"
+                    v-if="leftView"
+                    class="v-link danger"
+                    @click="action('permanentDelete', r)"
                     >彻底删除</button
                   >
                 </template>
@@ -589,7 +613,11 @@ defineExpose({ cell, columns });
               <div class="v-empty">
                 <Icon name="search" />
                 <strong>{{ loading ? '数据加载中' : '暂无符合条件的记录' }}</strong
-                >调整筛选条件，或录入新的数据。</div
+                >{{
+                  route === 'roster' && leftView
+                    ? '调整筛选条件，或从在职花名册办理离职。'
+                    : '调整筛选条件，或录入新的数据。'
+                }}</div
               >
             </td>
           </tr>

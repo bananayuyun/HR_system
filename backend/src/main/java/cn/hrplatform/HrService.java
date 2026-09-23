@@ -327,6 +327,7 @@ public class HrService {
       case "LEAVE" -> "离职";
       case "REINSTATE" -> "复职";
       case "PERMANENT_DELETE" -> "彻底删除";
+      case "SENSITIVE_READ" -> "查看敏感信息";
       case "ARCHIVE" -> type.equals("emps") ? "离职" : "删除";
       case "RESTORE" -> type.equals("emps") ? "复职" : "恢复";
       case "CREATE" -> "新增";

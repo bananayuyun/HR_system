@@ -68,8 +68,7 @@ const navSearch = ref(''),
   expanded = ref(false),
   tab = ref('全部'),
   selected = ref(new Set()),
-  archive = ref(false),
-  archivedRows = ref([]),
+  leftView = ref(false),
   rankMap = ref(false),
   dialog = ref(null),
   dialogBack = ref(null),
@@ -135,6 +134,7 @@ const people = computed(() =>
       org.value &&
       within(e.dept, org.value.id) &&
       !e.deletedAt &&
+      e.status !== '已离职' &&
       (e.name + ' ' + e.phone).toLowerCase().includes(orgPeopleApplied.value.toLowerCase()),
   ),
 );
@@ -165,10 +165,17 @@ const stageTabs = computed(() =>
         : [],
 );
 const rawRows = computed(() => {
-  let rows = route.value === 'roster' && archive.value ? archivedRows.value : db[type.value] || [];
+  let rows = db[type.value] || [];
   if (!Array.isArray(rows)) return [];
-  if (route.value === 'roster' && !archive.value)
-    rows = rows.filter((r) => !r.deletedAt && !r.deleted_at && !r.archived);
+  if (route.value === 'roster')
+    rows = rows.filter(
+      (r) =>
+        !r.deletedAt &&
+        !r.deleted_at &&
+        !r.deleted &&
+        !r.archived &&
+        (r.status === '已离职') === leftView.value,
+    );
   if (route.value === 'screening') {
     const pending = isHr.value ? '待 HR 筛选' : '待部门筛选';
     rows = rows.filter(
@@ -463,7 +470,7 @@ onBeforeUnmount(() => {
 });
 watch(route, () => {
   reset();
-  archive.value = false;
+  leftView.value = false;
   expanded.value = false;
   dialog.value = null;
   dialogBack.value = null;
@@ -510,10 +517,14 @@ async function handleAction(kind, row) {
   const entity =
     row?.entityType || (dialog.value?.kind === 'detail' ? dialog.value.type : type.value);
   try {
-    if (kind === 'archiveToggle') {
-      archive.value = !archive.value;
-      archivedRows.value = db.emps.filter((r) => r.deleted || r.deletedAt || r.archived);
-      selected.value = new Set();
+    if (kind === 'rosterView') {
+      const keyword = query.q || applied.value.q;
+      leftView.value = row === 'left';
+      reset();
+      if (keyword) {
+        query.q = keyword;
+        applyQuery();
+      }
       return;
     }
     if (kind === 'moveUp' || kind === 'moveDown') {
@@ -570,6 +581,8 @@ async function handleAction(kind, row) {
       return;
     }
     if (kind === 'add' || kind === 'edit' || kind === 'sectionEdit') {
+      if (entity === 'emps' && kind !== 'add' && row?.status === '已离职')
+        throw new Error('已离职员工档案仅支持查看；需要修改请先复职。');
       dialog.value = {
         kind: 'edit',
         type: kind === 'sectionEdit' ? 'emps' : entity,
@@ -648,8 +661,6 @@ async function saved(message, close = true) {
   }
   await load();
   if (nextOrg) orgId.value = nextOrg;
-  if (archive.value)
-    archivedRows.value = db.emps.filter((r) => r.deleted || r.deletedAt || r.archived);
 }
 </script>
 <template>
@@ -780,11 +791,11 @@ async function saved(message, close = true) {
       <div class="v-work">
         <div class="v-breadcrumb"
           >{{ page[1] }}<span>/</span>
-          <b>{{ page[0] }}</b>
+          <b>{{ route === 'roster' && leftView ? '离职人员档案' : page[0] }}</b>
         </div>
         <main class="v-content" :data-page="route">
           <div class="v-title">
-            <h1>{{ page[0] }}</h1>
+            <h1>{{ route === 'roster' && leftView ? '离职人员档案' : page[0] }}</h1>
             <span v-if="route === 'settings'" class="v-scope">HR 管理员</span>
             <div v-else class="v-title-tools">
               <span class="v-scope">{{
@@ -1165,9 +1176,9 @@ async function saved(message, close = true) {
                   :selected="selected"
                   :editable="editable"
                   :is-hr="isHr"
-                  :archived="archive"
+                  :left-view="leftView"
                   :loading="loading"
-                  :reset-key="JSON.stringify([applied, tab, advanced[route]])"
+                  :reset-key="JSON.stringify([leftView, applied, tab, advanced[route]])"
                   @action="handleAction"
                   @select="selected = $event"
                 />
