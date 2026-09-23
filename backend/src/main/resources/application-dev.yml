@@ -1,2 +1,2 @@
 hr:
-  seed-demo: ${HR_SEED_DEMO:true}
+  seed-demo: ${HR_SEED_DEMO:false}
