@@ -194,7 +194,7 @@ await check('Service identity, login roles, and anonymous rejection', async () =
     password: process.env.HR_INITIAL_MANAGER_PASSWORD || 'manager123',
   });
   assert.equal(a.user.role, 'hr');
-  assert.equal(a.user.menus.length, 11);
+  assert.equal(a.user.menus.length, 12);
   assert.equal(m.user.managerDept, 'ORG_18');
   all = await admin.get('/bootstrap');
   own = await manager.get('/bootstrap');
@@ -214,8 +214,18 @@ if (all && own && outsideOrg) {
   await check('Manager bootstrap and single-record reads enforce department scope', async () => {
     const allowed = new Set(own.orgs.map((row) => row.id));
     for (const type of ['emps', 'jobs', 'reqs', 'candidates', 'assets']) {
-      for (const row of own[type])
-        assert.ok(allowed.has(row.dept), `${type}/${row.id} leaked ${row.dept}`);
+      for (const row of own[type]) {
+        if (type === 'emps' && !allowed.has(row.dept)) {
+          assert.deepEqual(
+            Object.keys(row).sort(),
+            ['dept', 'id', 'job', 'name', 'status'],
+            `Cross-department HR directory row exposed extra fields: ${row.id}`,
+          );
+          await manager.get(`/emps/${row.id}`, 403);
+        } else {
+          assert.ok(allowed.has(row.dept), `${type}/${row.id} leaked ${row.dept}`);
+        }
+      }
       const outside = all[type].find((row) => !allowed.has(row.dept));
       if (outside) await manager.get(`/${type}/${outside.id}`, 403);
     }

@@ -42,6 +42,9 @@ function update(value) {
   emit('update:modelValue', value ?? '');
   emit('change', value ?? '');
 }
+function selectPopupContainer(trigger) {
+  return trigger.closest('.v-dialog .v-field') || document.body;
+}
 </script>
 <template>
   <span v-if="type === 'select' || type === 'multi'" class="w3-control"
@@ -57,6 +60,7 @@ function update(value) {
       allow-clear
       show-search
       :filter-option="(v, o) => String(o.label).toLowerCase().includes(v.toLowerCase())"
+      :get-popup-container="selectPopupContainer"
       style="width: 100%"
       @change="update"
       ><template #suffixIcon><Icon name="down" /></template></Select

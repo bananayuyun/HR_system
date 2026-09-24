@@ -1161,11 +1161,42 @@ body{font:14px/1.6 var(--font);color:#333;background:#f5f7fa;margin:0;padding-to
 .req-detail-section{padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid #ebedf0}.req-detail-section .sec-h{margin:0 0 16px!important}
 .req-detail-fields{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px 16px;margin:0;font-size:14px;line-height:22px}.req-detail-fields dt{color:#969799}.req-detail-fields dd{margin:0;color:#333;overflow-wrap:anywhere}.req-detail-section p{margin:0;line-height:24px;white-space:pre-wrap}
 
+/* Recruitment metrics use a centered primary value with supporting text below. */
+.v-content[data-page="reqs"] .tbl tbody td{height:56px;padding-top:7px;padding-bottom:7px}
+.v-content[data-page="reqs"] .tbl :is(th,td)[data-list-key="capacity"],
+.v-content[data-page="reqs"] .tbl :is(th,td)[data-list-key="status"],
+.v-content[data-page="reqs"] .tbl :is(th,td)[data-list-key="candidates"],
+.v-content[data-page="reqs"] .tbl :is(th,td)[data-list-key="count"]{text-align:center;vertical-align:middle}
+.v-content[data-page="reqs"] .tbl th[data-list-key="capacity"]{min-width:180px}
+.v-content[data-page="reqs"] .tbl th[data-list-key="status"]{min-width:90px}
+.v-content[data-page="reqs"] .tbl :is(th[data-list-key="capacity"],th[data-list-key="status"],th[data-list-key="candidates"],th[data-list-key="count"]) .v-sort{width:100%;justify-content:center}
+.v-content[data-page="reqs"] .req-capacity-cell{align-items:center;gap:5px;min-width:0}
+.v-content[data-page="reqs"] .req-capacity-cell .v-cell-sub{display:block;line-height:16px;white-space:normal;text-align:center}
+.v-content[data-page="reqs"] .tbl td[data-list-key="count"] .v-cell-sub{display:block;margin-top:3px;line-height:16px}
+.v-content[data-page="reqs"] .req-capacity-state{font-size:13px}
+.v-content[data-page="reqs"] .req-capacity-placeholder{border-color:transparent;background:transparent;color:#333}
+
 
 /* 稳定的弹窗层级与滚动：弹窗底部操作栏始终可见，下拉层不被内容区遮挡。 */
 .v-dialog .modal-b{min-height:0;padding-bottom:32px;scrollbar-gutter:stable}
 .v-dialog .modal-f{position:sticky;bottom:0;z-index:6;background:#fff;box-shadow:0 -1px 0 #ebedf0}
+.v-dialog .modal-f .req-delete-action{display:flex;align-items:center;gap:12px;margin-right:auto}
+.v-dialog .modal-f .req-delete-help{color:#969799;font-size:12px}
+.v-dialog .modal-f .req-delete-confirm{margin-right:auto;color:#333;font-size:13px;line-height:18px}
+.req-historical-hint{margin-bottom:20px}
 .ant-select-dropdown,.ant-picker-dropdown,.w3-popover{z-index:2000!important}
 .iv-multi-menu{z-index:2001!important;max-height:260px;overflow:auto}
 .v-dialog .modal-b>.ant-select-dropdown,.v-dialog .modal-b>.ant-picker-dropdown{position:fixed!important}
 @media (max-width:760px){.v-dialog{max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.v-dialog .modal-b{padding:16px}.v-dialog .modal-f{padding:10px 16px}}
+.w3-tree-collapse .wi{transform:rotate(180deg)}
+.w3-tree-collapsed .w3-tree-collapse .wi{transform:none}
+.w-fullscreen{inset:0!important;box-sizing:border-box;box-shadow:none!important}
+.v-nav-search{position:relative}
+.v-nav-search .inp{padding-right:32px}
+.v-nav-search-clear{position:absolute;right:19px;top:24px;width:12px;height:12px;display:grid;place-items:center;border:1px solid #969799;border-radius:50%;padding:0;background:#fff;color:#969799;font-size:11px;line-height:10px}
+.v-nav-search-results{margin-top:4px;padding:4px;border:1px solid #ebedf0;border-radius:4px;background:#fff;box-shadow:0 4px 12px #0002;max-height:240px;overflow:auto}
+.v-nav-search-result{display:flex;align-items:center;width:100%;min-height:34px;padding:6px 10px;border:0;border-radius:3px;background:#f5f7fa;color:#333;text-align:left;font-size:14px;cursor:pointer}
+.v-nav-search-result:hover,.v-nav-search-result:focus-visible{background:#e8eefb}
+.v-nav-search-result strong{color:#1555d4;font-weight:500}
+.v-nav-search-separator{padding:0 4px;color:#969799}
+.v-nav-search-empty{padding:8px 10px;color:#969799;font-size:13px}

@@ -790,29 +790,21 @@ try {
     "roster",
     "Employment section leave persists after return of assets",
     async () => {
-      await employeeSection("任职信息");
-      await select("status", "已离职");
-      await chooseDate("leaveDate", today);
-      await submit(`/emps/${employee.id}`, { method: "PUT" });
+      await openRow('roster', employee, '办理离职');
+      await dialog().getByLabel('离职原因', { exact: true }).fill(prefix + ' UI 离职');
+      await submit(`/emps/${employee.id}/actions/leave`);
       assert.equal((await read("emps", employee)).status, "已离职");
     },
   );
   await check(
     "roster",
-    "Archive then archived-list restore buttons roundtrip the same employee",
+    "Left-roster view and reinstate button roundtrip the same employee",
     async () => {
-      await openRow("roster", employee, "删除");
-      await dialog()
-        .getByLabel("归档原因", { exact: true })
-        .fill(prefix + " UI archive");
-      await submit(`/emps/${employee.id}`, { method: "DELETE" });
-      const archived = await api("GET", `/emps?archived=true&q=${employee.id}`);
-      assert.ok(archived.items.some((e) => e.id === employee.id));
       await page.goto(
         base + "/?workflow=" + Date.now() + "-" + ++serial + "#/roster",
       );
       await page
-        .getByRole("button", { name: "查看已归档", exact: true })
+        .getByRole("button", { name: "离职人员档案", exact: true })
         .click();
       const search = page.getByRole("textbox", { name: "关键词搜索" });
       await search.fill(employee.name);
@@ -821,12 +813,12 @@ try {
         .locator("tbody tr")
         .filter({ hasText: employee.name })
         .first()
-        .getByRole("button", { name: "恢复档案", exact: true })
+        .getByRole("button", { name: "复职", exact: true })
         .click();
-      await submit(`/emps/${employee.id}/restore`);
+      await submit(`/emps/${employee.id}/actions/reinstate`);
       const restored = await read("emps", employee);
-      assert.ok(!restored.archived && !restored.deletedAt && !restored.deleted);
-      assert.equal(restored.status, "已离职");
+      assert.equal(restored.status, "正式");
+      assert.equal(restored.leaveDate, '');
     },
   );
 } finally {

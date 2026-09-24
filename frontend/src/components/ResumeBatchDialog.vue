@@ -26,9 +26,7 @@ const requestOptions = computed(() =>
 const selectedRequest = computed(() => requests.value.find((row) => row.id === form.req));
 const regionOptions = computed(() => activeDictionary('workRegion'));
 const workplaceOptions = computed(() => activeDictionary('workplace'));
-const ready = computed(() =>
-  Boolean(selectedRequest.value && form.source && form.workRegion && form.workplace),
-);
+const ready = computed(() => Boolean(form.source));
 const savedCount = computed(() => rows.value.filter((row) => row.status === 'saved').length);
 const remaining = computed(() => rows.value.filter((row) => row.status !== 'saved'));
 const hasPending = computed(() => remaining.value.length > 0);
@@ -71,11 +69,6 @@ async function readFiles(event) {
   const files = [...(event.target.files || [])];
   if (!files.length) return;
   error.value = '';
-  if (!ready.value) {
-    error.value = '请先选择招聘需求、简历来源、工作片区和工作所在地。';
-    event.target.value = '';
-    return;
-  }
   if (files.length > 30) {
     error.value = '单次最多录入 30 份简历。';
     event.target.value = '';
@@ -154,7 +147,7 @@ async function showPreview(index) {
   previewPanel.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function validate() {
-  if (!ready.value) return '请选择招聘中的需求，并填写简历来源、工作片区和工作所在地。';
+  if (!ready.value) return '请选择简历来源。';
   if (!rows.value.length) return '请先选择并核对简历文件。';
   const phones = new Set();
   for (let index = 0; index < rows.value.length; index++) {
@@ -177,10 +170,7 @@ function validate() {
 }
 function candidateData(row) {
   const data = {
-    req: form.req,
     source: form.source,
-    workRegion: form.workRegion,
-    workplace: form.workplace,
     name: row.name,
     phone: row.phone,
     email: row.email,
@@ -188,6 +178,9 @@ function candidateData(row) {
     years: 0,
     notes: row.raw.slice(0, 20000) || '请查看原始简历并补充候选人信息。',
   };
+  if (form.req) data.req = form.req;
+  if (form.workRegion) data.workRegion = form.workRegion;
+  if (form.workplace) data.workplace = form.workplace;
   const company = selectedRequest.value?.contractCompany || selectedRequest.value?.company;
   if (company) data.contractCompany = company;
   return data;
@@ -234,7 +227,7 @@ async function commit() {
   }
 }
 function outcome() {
-  return `已录入 ${savedCount.value} 份简历并保存原附件，进入 HR 筛选${remaining.value.length ? `；另有 ${remaining.value.length} 份尚未录入` : ''}。`;
+  return `已录入 ${savedCount.value} 份简历并保存原附件，${form.req ? '进入 HR 筛选' : '可在简历库中预览并稍后关联需求'}${remaining.value.length ? `；另有 ${remaining.value.length} 份尚未录入` : ''}。`;
 }
 function finish() {
   if (savedCount.value) emit('saved', outcome());
@@ -262,14 +255,13 @@ onBeforeUnmount(() => {
     <form id="resume-form" @submit.prevent="commit">
       <div class="v-form">
         <div class="v-field"
-          ><label for="field-resume-req"><i>*</i>关联招聘需求</label
+          ><label for="field-resume-req">关联招聘需求（可稍后关联）</label
           ><FieldControl
             v-model="form.req"
             name="resume-req"
             label="关联招聘需求"
             type="select"
             :options="requestOptions"
-            required
             :disabled="busy || savedCount > 0"
             @change="requestChanged"
         /></div>
@@ -285,37 +277,35 @@ onBeforeUnmount(() => {
             :disabled="busy || savedCount > 0"
         /></div>
         <div class="v-field"
-          ><label for="field-resume-region"><i>*</i>工作片区</label
+          ><label for="field-resume-region">工作片区</label
           ><FieldControl
             v-model="form.workRegion"
             name="resume-region"
             label="工作片区"
             type="select"
             :options="regionOptions"
-            required
             :disabled="busy || savedCount > 0"
         /></div>
         <div class="v-field"
-          ><label for="field-resume-workplace"><i>*</i>工作所在地</label
+          ><label for="field-resume-workplace">工作所在地</label
           ><FieldControl
             v-model="form.workplace"
             name="resume-workplace"
             label="工作所在地"
             type="select"
             :options="workplaceOptions"
-            required
             :disabled="busy || savedCount > 0"
         /></div>
       </div>
       <label
         class="v-file-box resume-files"
-        :class="{ 'resume-files-disabled': !ready || savedCount > 0 }"
+        :class="{ 'resume-files-disabled': busy || savedCount > 0 }"
         >选择已收集的简历
         <input
           type="file"
           accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
           multiple
-          :disabled="!ready || busy || savedCount > 0"
+          :disabled="busy || savedCount > 0"
           aria-label="批量选择简历文件"
           @change="readFiles"
         />
@@ -325,7 +315,7 @@ onBeforeUnmount(() => {
         >
       </label>
       <div class="v-hint"
-        >文本提取仅辅助核对，扫描 PDF
+        >可以先上传简历，再关联招聘需求。文本提取仅辅助核对，扫描 PDF
         与图片需人工填写。姓名、联系方式需核对后再录入，不自动评分；确认录入后保存原始附件。</div
       >
       <p v-if="busy" class="v-muted" role="status">{{ progress }}</p>
@@ -415,7 +405,7 @@ onBeforeUnmount(() => {
         :disabled="busy || !rows.length || !ready"
         @click="commit"
         >{{
-          busy && attempted ? '正在录入…' : attempted ? '重试未成功项' : '确认录入待筛选'
+          busy && attempted ? '正在录入…' : attempted ? '重试未成功项' : form.req ? '确认录入待筛选' : '确认录入简历库'
         }}</button
       ></template
     >

@@ -12,13 +12,15 @@ mvn.cmd -f .\backend\pom.xml verify
 
 启动脚本读取系统根 `.env`，并以 `backend` 为后端进程工作目录，确保示例中的相对上传路径 `../.local/uploads` 指向系统根 `.local/uploads`。不要在系统根直接执行 `java -jar` 并沿用该相对路径。
 
-必须配置 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 和 `HR_ENCRYPTION_KEY`。AES 密钥为 Base64 编码的 32 个随机字节；已保存敏感资料之后必须保留原密钥，备份数据库时同时安全备份密钥。使用 `SPRING_PROFILES_ACTIVE=dev|test|prod` 区分环境，生产配置不内置数据库密码，且拒绝默认初始账号密码。
+本地开发从 `.env` 读取 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 和 `HR_ENCRYPTION_KEY`。AES 密钥为 Base64 编码的 32 个随机字节；已保存敏感资料之后必须保留原密钥，备份数据库时同时安全备份密钥。使用 `--spring.profiles.active=dev|test|prod` 切换环境。测试和生产数据库连接分别保存在本机的 `application-test.yml`、`application-prod.yml`，仓库只保留无密码的 `.example` 模板；生产环境还需配置 `HR_USER_CENTER_BASE_URL`。
 
-Flyway 自动运行 [src/main/resources/db/migration](src/main/resources/db/migration) 中的版本迁移。V1 保留外层设计文档的建表定义并移除破坏性初始化包装，V2 增加 RBAC 权限点、多负责人、扩展字段、附件与版本。不要修改已经执行的迁移，应新增版本。[src/main/resources/dev/prototype-seed.json](src/main/resources/dev/prototype-seed.json) 是经真实浏览器执行原型最终脚本后导出的虚构人员数据，仅在非生产且 `HR_SEED_DEMO=true` 时初始化；生产只初始化账号、角色、真实组织和共享字典。
+Flyway 自动运行 [src/main/resources/db/migration](src/main/resources/db/migration) 中的版本迁移。V1 保留外层设计文档的建表定义并移除破坏性初始化包装，V2 增加 RBAC 权限点、多负责人、扩展字段、附件与版本。不要修改已经执行的迁移，应新增版本。[src/main/resources/dev/prototype-seed.json](src/main/resources/dev/prototype-seed.json) 是经真实浏览器执行原型最终脚本后导出的虚构人员数据，仅在非生产且 `HR_SEED_DEMO=true` 时初始化；生产不创建内置登录账号。
 
 ## 实现分工
 
-- `Auth`、`WebConfig`、`Scope`：BCrypt 登录、会话撤销、请求来源检查和组织树数据范围。
+登录页直接填写用户中心账号和密码。`/api/auth/login` 会把密码按 UTF-8 Base64 编码提交给用户中心，再用初始 token 调用 `GET /auth/getUserInfo?type=1`，将返回的新 token 保存在本系统服务端会话。刷新页面访问 `/api/auth/me` 时再次取用户信息并更新 token。响应中的 `user.userCenter` 含 `userAccount`、`userInfo` 和 `currentTenant`，不向浏览器返回 token。首次登录的用户中心账号自动创建本地身份记录及 `HR_ADMIN`；同名已有身份的角色配置不改动，但其用户中心会话按 HR 管理员视角运行。用户中心菜单权限暂不接入，业务接口使用本系统 HR 管理员权限。`dev` 环境默认连接测试用户中心，`test` 和 `prod` 启动时必须配置 `HR_USER_CENTER_BASE_URL`。本地密码登录已关闭，旧会话需重新登录，密码应在用户中心修改。
+
+- `Auth`、`WebConfig`、`Scope`：用户中心登录、会话撤销、请求来源检查和组织树数据范围。
 - `HrService`、`WorkflowService`：实体读写、字段转换、招聘入职和资产状态流程；跨表操作使用事务，更新使用版本或行锁。
 - `Crypto`、`Audit`：AES-GCM 敏感字段加密，脱敏前后快照与权限拒绝的独立事务审计。
 - `ImportService`、`ResumeService`：XLS/XLSX 预检、逐行事务和批次幂等，以及 Word/PDF 文本提取与原子简历录入。

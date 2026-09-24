@@ -123,7 +123,8 @@ public class FilesService {
 
   public ResponseEntity<?> download(Actor a, String type, long id, boolean inline) {
     if (type.equals("emps")) hr.auditor().require(a, "emps:sensitive");
-    else hr.auditor().require(a, "pool:read");
+    else if (!a.can("screening:read") && !a.can("interviews:read") && !a.can("offers:read"))
+      hr.auditor().require(a, "pool:read");
     var f = file(a, type, id);
     Path path = directory.resolve(Db.str(f, "object_key")).normalize();
     if (!path.startsWith(directory) || !Files.isRegularFile(path))

@@ -103,7 +103,7 @@ function value(key) {
   const e = detail.value;
   if (['dept', 'mainDept', 'secondaryDept', 'parent'].includes(key))
     return deptName(key === 'mainDept' ? e.mainDept || topDept(e.dept)?.id : e[key]);
-  if (key === 'job') return jobName(e.job);
+  if (key === 'job') return jobName(e.job, e.historicalJobName);
   if (key === 'supervisor') return e.supervisor ? empName(e.supervisor) : '—';
   if (key === 'age') {
     const d = new Date(revealed.value.birthday || e.birthday);
@@ -205,7 +205,7 @@ const candidateFields = computed(() =>
     ? [
         ['手机号码', detail.value.phone],
         ['电子邮箱', detail.value.email],
-        ['岗位', jobName(detail.value.job)],
+        ['岗位', jobName(detail.value.job, detail.value.historicalJobName)],
         ['当前状态', detail.value.stage],
         ['工作片区', detail.value.workRegion || detail.value.location],
         ['工作所在地', detail.value.workplace || detail.value.office],
@@ -233,7 +233,7 @@ const candidateFields = computed(() =>
 );
 const entryFields = computed(() => {
   const r = detail.value,
-    req = db.reqs.find((q) => q.id === r.req);
+    req = db.reqs.find((q) => q.id === r.req) || db.reqHistory.find((q) => q.id === r.req);
   return [
     ['当前状态', r.stage],
     ['钉钉审批结果', '未接入'],
@@ -282,7 +282,7 @@ const reqSections = computed(() => {
       '基本信息',
       [
         ['需求部门', deptName(r.dept)],
-        ['招聘岗位', jobName(r.job)],
+        ['招聘岗位', jobName(r.job, r.historicalJobName)],
         ['岗位所属组织', deptName(j?.dept)],
         ['需求类型', r.type],
         ['需求人数', r.count + ' 人'],
@@ -338,12 +338,21 @@ const blue = (s) =>
             >{{ detail.name }}
             <span v-if="detail.status === '已离职'" class="v-badge">已离职</span></h2
           ><span class="v-muted"
-            >{{ detail.id }} · {{ deptName(detail.dept) }} · {{ jobName(detail.job) }}</span
+            >{{ detail.id }} · {{ deptName(detail.dept) }} · {{ jobName(detail.job, detail.historicalJobName) }}</span
           ></div
         ><div
-          v-if="(can('exports:read') && can('emps:sensitive')) || can('audit:read')"
+          v-if="
+            employeeWritable || (can('exports:read') && can('emps:sensitive')) || can('audit:read')
+          "
           class="v-drawer-actions"
-          ><details class="employee-more"
+          ><button
+            v-if="employeeWritable"
+            class="btn"
+            @click="action('sectionEdit', { section: 'basic' })"
+            >编辑档案</button
+          ><details
+            v-if="(can('exports:read') && can('emps:sensitive')) || can('audit:read')"
+            class="employee-more"
             ><summary class="btn" tabindex="0">更多 <Icon name="down" /></summary
             ><div class="employee-more-menu"
               ><button
@@ -364,11 +373,11 @@ const blue = (s) =>
         >{{ detail.name }}
         <span class="v-badge" :class="{ blue: blue(detail.stage) }">{{ detail.stage }}</span></h2
       ><span class="v-muted"
-        >{{ legacyCandidate ? detail.id + ' · ' : '' }}{{ reqName(detail.req) }} ·
-        {{ deptName(detail.dept) }}</span
+        >{{ legacyCandidate ? detail.id + ' · ' : '' }}{{ detail.req ? reqName(detail.req) : '未关联招聘需求' }}<template v-if="detail.dept"> ·
+        {{ deptName(detail.dept) }}</template></span
       ></div
     >
-    <div v-if="legacyCandidate && route !== 'screening'" class="v-drawer-actions"
+    <div v-if="legacyCandidate && !['screening', 'deptscreening'].includes(route)" class="v-drawer-actions"
       ><template v-if="['初试', '复试'].includes(detail.stage) && can('interviews:write')"
         ><button class="btn pri-btn" @click="action('schedule')">安排面试</button
         ><button class="btn" @click="action('interviewResult')">录入面试结果</button></template
@@ -383,7 +392,7 @@ const blue = (s) =>
       ><button
         v-if="
           detail.stage !== '已入职' &&
-          can('candidates:write') &&
+          (can('candidates:write') || can('screening:department')) &&
           (isHr || !['待入职', '延期入职', '未到岗', '放弃入职', '取消入职'].includes(detail.stage))
         "
         class="btn"
@@ -391,6 +400,17 @@ const blue = (s) =>
         >编辑候选信息</button
       ></div
     >
+    <div
+      v-if="
+        legacyCandidate &&
+        ['screening', 'deptscreening'].includes(route) &&
+        detail.stage !== '已入职' &&
+        (can('candidates:write') || can('screening:department'))
+      "
+      class="v-drawer-actions"
+    >
+      <button class="btn" @click="action('edit')">编辑候选信息</button>
+    </div>
     <div v-if="tabs.length" class="v-tabs"
       ><button
         v-for="[key, label] in tabs"
@@ -519,7 +539,10 @@ const blue = (s) =>
         ></div
       ><ol class="v-timeline"
         ><li v-for="(item, i) in history" :key="i"
-          ><b>{{ item.title || item.type || item.action || '变更记录' }}</b
+          ><b
+            ><template v-if="item.editable && item.type && item.title && item.title !== item.type"
+              >{{ item.type }} · </template
+            >{{ item.title || item.type || item.action || '变更记录' }}</b
           ><span class="v-muted"
             >{{ item.date || item.createdAt }} · {{ item.operator || item.actorName }}</span
           ><p>{{ item.detail || item.reason || item.description }}</p
@@ -622,8 +645,16 @@ const blue = (s) =>
         ><h4 class="sec-h">简历摘要</h4
         ><p style="white-space: pre-wrap">{{ detail.notes || '暂无摘要' }}</p
         ><h4 class="sec-h">原始简历</h4
+        ><label v-if="can('candidates:write')" class="btn resume-detail-upload"
+          >上传简历<input
+            type="file"
+            accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
+            :disabled="busy"
+            aria-label="上传原始简历"
+            @change="upload"
+          /></label
         ><div v-if="!files.length" class="v-hint">{{
-          legacyCandidate ? '暂无简历附件。可批量录入自有简历进行预览。' : '暂无简历附件'
+          '暂无简历附件，可在这里上传后预览。'
         }}</div
         ><div v-for="file in files" :key="file.id" class="v-file-row"
           ><div
@@ -698,7 +729,7 @@ const blue = (s) =>
       ></div
     >
     <template #footer>
-      <template v-if="type === 'candidates' && route === 'screening' && editable"
+      <template v-if="type === 'candidates' && ['screening', 'deptscreening'].includes(route) && editable"
         ><button class="btn" @click="emit('close')">关闭</button
         ><button class="btn" @click="action('screening', { result: '暂缓' })">暂缓筛选</button
         ><button class="btn danger" @click="action('screening', { result: '未通过' })"
@@ -706,7 +737,7 @@ const blue = (s) =>
         ><button class="btn" @click="action('screening', { result: '候选人取消' })"
           >候选人取消</button
         ><button class="btn pri-btn" @click="action('screening')">{{
-          isHr ? 'HR 筛选' : '部门筛选'
+          isHr && route === 'screening' ? 'HR 筛选' : '部门筛选'
         }}</button></template
       >
       <template v-else-if="type === 'candidates' && route === 'offers' && can('offers:write')"
@@ -719,6 +750,12 @@ const blue = (s) =>
         ><button class="btn pri-btn" @click="action('onboarding')">{{
           ['待入职', '延期入职'].includes(detail.stage) ? '确认入职' : '办理'
         }}</button></template
+      >
+      <template v-else-if="type === 'candidates' && route === 'pool'"
+        ><button class="btn" @click="emit('close')">关闭</button
+        ><button v-if="!detail.req && can('candidates:write')" class="btn pri-btn" @click="action('edit')"
+          >关联招聘需求</button
+        ></template
       >
       <template v-else-if="type === 'emps'"
         ><button class="btn" @click="emit('close')">关闭</button
@@ -742,7 +779,11 @@ const blue = (s) =>
           >删除</button
         ><button class="btn" @click="emit('close')">关闭</button
         ><button
-          v-if="editable && !['emps', 'candidates'].includes(type)"
+          v-if="
+            editable &&
+            !['emps', 'candidates'].includes(type) &&
+            !(type === 'reqs' && detail.historicalJobName && !detail.job && detail.status !== '已关闭')
+          "
           class="btn pri-btn"
           @click="action('edit')"
           >编辑</button
@@ -751,3 +792,8 @@ const blue = (s) =>
     </template>
   </DialogFrame>
 </template>
+
+<style scoped>
+.resume-detail-upload{position:relative;display:inline-flex;align-items:center;margin:0 0 12px;overflow:hidden;cursor:pointer}
+.resume-detail-upload input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+</style>

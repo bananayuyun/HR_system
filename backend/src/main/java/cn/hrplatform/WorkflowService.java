@@ -467,6 +467,7 @@ public class WorkflowService {
   }
 
   void ensureOpenRequest(Map<String, Object> c) {
+    if (c.get("request_id") == null) throw ApiException.conflict("请先关联招聘需求，再推进候选人流程。");
     var req =
         db.one("SELECT status,deleted_at FROM recruitment_request WHERE id=?", c.get("request_id"));
     if (req.get("deleted_at") != null || !"OPEN".equals(req.get("status")))
@@ -752,26 +753,19 @@ public class WorkflowService {
               event,
               id);
       if (log == null) throw new ApiException(404, "成长记录不存在。");
-      if (!Boolean.TRUE.equals(db.object(log.get("after_json")).get("manual")))
-        throw ApiException.bad("系统生成的变更记录不可修改。");
       if (action.equals("timeline-delete"))
         db.jdbc.update(
             "UPDATE employee_change_log SET deleted_at=UTC_TIMESTAMP() WHERE id=?", event);
       else {
         validateTimeline(body);
         db.jdbc.update(
-            "UPDATE employee_change_log SET change_type=?,after_json=? WHERE id=?",
+            "UPDATE employee_change_log SET change_type=?,after_json=JSON_SET("
+                + "COALESCE(after_json,JSON_OBJECT()),'$.manual',true,'$.date',?,"
+                + "'$.title',?,'$.detail',?) WHERE id=?",
             body.get("type"),
-            db.json(
-                Db.map(
-                    "manual",
-                    true,
-                    "date",
-                    body.get("date"),
-                    "title",
-                    body.get("title"),
-                    "detail",
-                    body.get("detail"))),
+            body.get("date"),
+            body.get("title"),
+            body.get("detail"),
             event);
       }
       audit.record(a, action, "emps", id, null, null);

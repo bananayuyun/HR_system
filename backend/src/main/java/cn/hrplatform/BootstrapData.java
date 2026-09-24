@@ -2,6 +2,7 @@ package cn.hrplatform;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,16 +12,13 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Accounts and real business dictionaries exist in every profile. Fictional people are dev-only.
- */
+/** Business dictionaries exist in every profile. Fictional people are dev-only. */
 @Component
 public class BootstrapData implements ApplicationRunner {
   final Db db;
   final HrService hr;
   final Auth auth;
   final boolean demo;
-  final String adminPassword, managerPassword;
   final Environment environment;
 
   BootstrapData(
@@ -28,15 +26,11 @@ public class BootstrapData implements ApplicationRunner {
       HrService hr,
       Auth auth,
       Environment environment,
-      @Value("${hr.seed-demo}") boolean demo,
-      @Value("${hr.initial-admin-password}") String admin,
-      @Value("${hr.initial-manager-password}") String manager) {
+      @Value("${hr.seed-demo}") boolean demo) {
     this.db = db;
     this.hr = hr;
     this.auth = auth;
     this.demo = demo;
-    this.adminPassword = admin;
-    this.managerPassword = manager;
     this.environment = environment;
   }
 
@@ -44,52 +38,13 @@ public class BootstrapData implements ApplicationRunner {
   @Transactional
   public void run(ApplicationArguments args) throws Exception {
     boolean production = Arrays.asList(environment.getActiveProfiles()).contains("prod");
-    if (production && (adminPassword.equals("admin123") || managerPassword.equals("manager123")))
-      throw new IllegalStateException("Production requires non-default initial passwords.");
-    account("admin", "许 HR", "HR_ADMIN", null, adminPassword);
-    account(
-        "manager", "林主管 · 开发部", "DEPT_MANAGER", hr.ref("orgs", "ORG_18", true), managerPassword);
     if (demo
         && !production
         && db.jdbc.queryForObject("SELECT COUNT(*) FROM employee", Integer.class) == 0) seed();
-    if (demo
-        && !production
-        && db.one("SELECT setting_key FROM sys_setting WHERE setting_key='demo_initialized'")
-            != null) bindDemoAdmin();
     if (db.one("SELECT setting_key FROM sys_setting WHERE setting_key='sequences'") == null)
       db.jdbc.update(
           "INSERT INTO sys_setting(setting_key,value_json) VALUES('sequences',?)",
           db.json(List.of("管理 M", "技术 T", "营销 S", "专业 P")));
-  }
-
-  void bindDemoAdmin() {
-    // The prototype's existing HR owner is E0005; account display names are not employee keys.
-    db.jdbc.update(
-        "UPDATE sys_user u JOIN employee e ON e.employee_no='E0005'"
-            + " LEFT JOIN sys_user assigned ON assigned.employee_id=e.id"
-            + " SET u.employee_id=e.id WHERE u.username='admin' AND u.employee_id IS NULL"
-            + " AND e.deleted_at IS NULL AND e.status NOT IN ('LEFT','PENDING_LEAVE')"
-            + " AND assigned.id IS NULL");
-  }
-
-  void account(String username, String name, String role, Long org, String password) {
-    if (db.one("SELECT id FROM sys_user WHERE username=?", username) != null) return;
-    long user =
-        db.insert(
-            "sys_user",
-            Db.map(
-                "username",
-                username,
-                "display_name",
-                name,
-                "password_hash",
-                auth.hashPassword(password),
-                "org_id",
-                org));
-    db.jdbc.update(
-        "INSERT INTO sys_user_role(user_id,role_id) SELECT ?,id FROM sys_role WHERE code=?",
-        user,
-        role);
   }
 
   List<Map<String, Object>> rows(Map<String, Object> source, String key) {
@@ -110,10 +65,26 @@ public class BootstrapData implements ApplicationRunner {
     try (InputStream stream = getClass().getResourceAsStream("/dev/prototype-seed.json")) {
       source = db.json.readValue(stream, new TypeReference<LinkedHashMap<String, Object>>() {});
     }
+    long seedUser =
+        db.insert(
+            "sys_user",
+            Db.map(
+                "username", "__demo_seed__",
+                "display_name", "演示数据初始化",
+                "password_hash", auth.hashPassword(UUID.randomUUID().toString()),
+                "status", "DISABLED"));
     Actor admin =
-        auth.load(Db.num(db.one("SELECT id FROM sys_user WHERE username='admin'").get("id")));
+        new Actor(
+            seedUser, "__demo_seed__", "演示数据初始化", List.of("HR_ADMIN"), List.of(), null, "", "ALL");
     // Company grades are created by V4; demo employees use their nearest current grade.
-    for (var j : rows(source, "jobs"))
+    for (var j : rows(source, "jobs")) {
+      var jobExtra = extras(j);
+      jobExtra.computeIfPresent("sequence", (key, value) -> switch (Db.text(value)) {
+        case "管理序列 M" -> "管理 M";
+        case "技术序列 T" -> "技术 T";
+        case "销售序列 S" -> "营销 S";
+        default -> value;
+      });
       db.insert(
           "job_position",
           Db.map(
@@ -132,7 +103,8 @@ public class BootstrapData implements ApplicationRunner {
               "requirements",
               j.get("requirements"),
               "extra",
-              db.json(extras(j))));
+              db.json(jobExtra)));
+    }
     for (var e : rows(source, "emps")) {
       Map<String, Object> values = new LinkedHashMap<>();
       for (var field : EntitySchema.get("emps").fields().entrySet())
@@ -409,21 +381,54 @@ public class BootstrapData implements ApplicationRunner {
               "operator_user_id",
               admin.id()));
     }
-    var manager =
-        db.one(
-            "SELECT e.id FROM employee e JOIN org_department o ON o.id=e.main_org_id WHERE"
-                + " o.code='ORG_18' AND e.status NOT IN ('LEFT','PENDING_LEAVE') ORDER BY e.id"
-                + " LIMIT 1");
-    if (manager != null)
-      db.jdbc.update(
-          "UPDATE sys_user SET employee_id=? WHERE username='manager'", manager.get("id"));
     db.jdbc.update(
         "INSERT INTO sys_setting(setting_key,value_json) VALUES('sequences',?) ON DUPLICATE KEY"
             + " UPDATE value_json=VALUES(value_json)",
-        db.json(source.get("sequences")));
+        db.json(List.of("管理 M", "技术 T", "营销 S", "专业 P")));
+    deleteJobsAbsentFromRoster(source);
     db.jdbc.update(
         "INSERT INTO sys_setting(setting_key,value_json)"
             + " VALUES('demo_initialized',JSON_OBJECT('complete',true))");
+  }
+
+  void deleteJobsAbsentFromRoster(Map<String, Object> source) throws Exception {
+    Set<String> rosterPositions;
+    try (InputStream stream = getClass().getResourceAsStream("/dev/roster-positions.txt")) {
+      if (stream == null) throw new IllegalStateException("Roster position reference is missing.");
+      rosterPositions =
+          new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+              .lines()
+              .map(String::trim)
+              .filter(name -> !name.isEmpty())
+              .collect(java.util.stream.Collectors.toSet());
+    }
+    for (var job : rows(source, "jobs"))
+      if (!rosterPositions.contains(Db.text(job.get("name")))
+          || "J1".equals(Db.text(job.get("id")))) {
+        var row =
+            db.one(
+                "SELECT id FROM job_position WHERE code=? AND name=?",
+                job.get("id"),
+                job.get("name"));
+        if (row == null) continue;
+        long id = Db.num(row.get("id"));
+        db.jdbc.update(
+            "UPDATE employee SET extra=JSON_SET(COALESCE(extra,JSON_OBJECT()),"
+                + " '$.historicalJobName',?,'$.historicalJobCode',?),job_id=NULL,version=version+1"
+                + " WHERE job_id=?",
+            job.get("name"),
+            job.get("id"),
+            id);
+        db.jdbc.update(
+            "UPDATE recruitment_request SET extra=JSON_SET(COALESCE(extra,JSON_OBJECT()),"
+                + " '$.historicalJobName',?,'$.historicalJobCode',?),job_id=NULL,"
+                + " status=CASE WHEN status IN ('OPEN','PAUSED') THEN 'CLOSED' ELSE status END,"
+                + " version=version+1 WHERE job_id=?",
+            job.get("name"),
+            job.get("id"),
+            id);
+        db.jdbc.update("DELETE FROM job_position WHERE id=?", id);
+      }
   }
 
   static String companyGrade(String legacy) {

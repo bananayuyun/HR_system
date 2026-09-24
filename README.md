@@ -16,10 +16,10 @@
 ./scripts/start-frontend.ps1
 ```
 
-访问 `http://localhost:5180/`。前端在 `frontend/`，后端和数据库迁移在 `backend/`；本机配置见 [.env.example](.env.example)，实际 `.env`、数据库及上传文件保存在本机，不提交到仓库。
+访问 `http://localhost:5180/`，在系统登录页输入用户中心账号和密码。前端在 `frontend/`，后端和数据库迁移在 `backend/`；本机配置见 [.env.example](.env.example)，实际 `.env`、数据库及上传文件保存在本机，不提交到仓库。旧的本地 admin、manager 密码已不能登录。
 
 ## 验证与维护
 
 运行 `./scripts/verify.ps1` 检查 Java 测试和前端构建。测试环境使用独立数据库 `hrms_test`；部署说明见 [部署文档](docs/deployment.md)，接口见 [API 文档](backend/API.md)。
 
-代码托管在 GitLab 的 `yuyun/hr-platform`。本机计划任务每天 19:00 运行 [同步脚本](scripts/sync-gitlab.ps1)，通过检查后提交并推送代码。
+代码托管在 GitLab 的 `yuyun/hr-platform`，由维护人员手动同步。测试和生产数据库连接配置只保存在本机，仓库内仅提供无密码模板。

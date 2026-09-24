@@ -6,6 +6,24 @@ import { spawn } from "node:child_process";
 // must not race. Each constituent suite retains its own detailed assertions.
 const root = path.resolve(import.meta.dirname, "..");
 const group = process.argv[2] || "all";
+const identity = await fetch("http://127.0.0.1:8091/__acceptance/identity")
+  .then(async (response) => (response.ok ? response.text() : ""))
+  .catch(() => "");
+if (identity !== "mock-user-center-v1")
+  throw new Error("Start the isolated mock-user-center acceptance backend on localhost:8091 before running legacy suites.");
+let browserPath = process.env.HR_BROWSER_PATH;
+if (!browserPath && process.platform === "win32") {
+  for (const candidate of [
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+  ]) {
+    try {
+      await fs.access(candidate);
+      browserPath = candidate;
+      break;
+    } catch {}
+  }
+}
 const groups = {
   imports: [
     ["scripts/import-matrix-acceptance.mjs"],
@@ -74,6 +92,7 @@ for (const [script, overrides = {}] of suites) {
   const env = {
     ...process.env,
     HR_FRONTEND_URL: "http://127.0.0.1:5175",
+    ...(browserPath ? { HR_BROWSER_PATH: browserPath } : {}),
     ...overrides,
   };
   delete env.HR_VISUAL_ROUTES;

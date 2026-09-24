@@ -107,7 +107,7 @@ await check('Both accounts authenticate with server-controlled roles and menus',
     password: process.env.HR_INITIAL_MANAGER_PASSWORD || 'manager123',
   });
   assert.equal(a.user.role, 'hr');
-  assert.equal(a.user.menus.length, 11);
+  assert.equal(a.user.menus.length, 12);
   assert.equal(m.user.role, 'manager');
   assert.equal(m.user.managerDept, 'ORG_18');
   assert.ok(!m.user.permissions.includes('emps:write'));
@@ -131,8 +131,14 @@ await check(
   'Department scope filters employees, jobs, requests, candidates and assets',
   async () => {
     for (const type of ['emps', 'jobs', 'reqs', 'candidates', 'assets'])
-      for (const row of department[type])
-        assert.ok(allowed.has(row.dept), `${type}/${row.id} leaked department ${row.dept}`);
+      for (const row of department[type]) {
+        if (type === 'emps' && !allowed.has(row.dept)) {
+          assert.deepEqual(Object.keys(row).sort(), ['dept', 'id', 'job', 'name', 'status']);
+          await manager.get(`/emps/${row.id}`, 403);
+        } else {
+          assert.ok(allowed.has(row.dept), `${type}/${row.id} leaked department ${row.dept}`);
+        }
+      }
     assert.ok(department.emps.length < company.emps.length);
     await manager.get(`/emps/${outsider.id}`, 403);
     await manager.put(`/emps/${outsider.id}`, { ...outsider, name: 'OUTSIDE_WRITE_PROBE' }, 403);
@@ -247,21 +253,22 @@ await check(
     assert.equal(asset.owner, '');
     assert.equal(asset.status, '闲置');
     assert.ok(asset.history.length >= 2);
-    employee = await admin.put(`/emps/${employee.id}`, {
-      ...employee,
-      status: '已离职',
+    employee = await admin.post(`/emps/${employee.id}/actions/leave`, {
       leaveDate: today,
+      reason: '验收归还后离职',
+      version: employee.version,
     });
     assert.equal(employee.status, '已离职');
+    employee = await admin.post(`/emps/${employee.id}/actions/reinstate`, {
+      version: employee.version,
+    });
+    assert.equal(employee.status, '正式');
   },
 );
-await check('Archive and restore preserve the employee identity and history', async () => {
+await check('Legacy employee delete is refused and identity and history persist', async () => {
   const before = await admin.get(`/emps/${employee.id}`);
-  await admin.call('DELETE', `/emps/${employee.id}`, { version: before.version }, [200, 204]);
-  let row = await admin.get(`/emps/${employee.id}`);
-  assert.ok(row.deleted);
-  row = await admin.post(`/emps/${employee.id}/restore`, { version: row.version });
-  assert.equal(row.deleted, false);
+  await admin.call('DELETE', `/emps/${employee.id}`, { version: before.version }, 400);
+  const row = await admin.get(`/emps/${employee.id}`);
   assert.equal(row.dbId, before.dbId);
   assert.ok(row.timeline.length >= before.timeline.length);
 });
@@ -289,9 +296,8 @@ await check(
   'Recruitment follows HR screening, department screening and two interview rounds',
   async () => {
     assert.ok(job);
-    const interviewer = department.emps.find(
-      (e) => !e.deleted && !['已离职', '待离职'].includes(e.status),
-    );
+    const interviewer = department.emps.find((e) => e.id === 'E0002');
+    assert.ok(interviewer, 'Manager test identity must be bound to E0002.');
     const hrPerson =
       company.emps.find((e) => e.dept === 'ORG_05' && !['已离职', '待离职'].includes(e.status)) ||
       interviewer;
@@ -464,6 +470,9 @@ await check(
     );
     const mysql = path.join(root, '.tools/mysql-8.4.11-winx64/bin/mysql.exe');
     const query = `SELECT COUNT(*) FROM employee e JOIN employee_sensitive s ON s.employee_id=e.id WHERE e.employee_no='${employee.id}' AND OCTET_LENGTH(s.id_no_cipher)>28 AND LOCATE(_binary '11010519491231002X',s.id_no_cipher)=0; SELECT COUNT(*) FROM employee WHERE extra LIKE '%PRIVATE_${prefix}%' OR extra LIKE '%11010519491231002X%'; SELECT COUNT(*) FROM audit_log WHERE action='ACCESS_DENIED' AND request_id IS NOT NULL AND ip IS NOT NULL;`;
+    const schema = process.env.HR_ACCEPTANCE_SCHEMA || 'hrms_acceptance_20260924';
+    if (!/^hrms_acceptance_[0-9]{8}(?:_[a-z0-9]+)?$/.test(schema))
+      throw new Error('Invalid isolated acceptance schema.');
     const run = spawnSync(
       mysql,
       [
@@ -473,7 +482,7 @@ await check(
         `--user=${cfg.DB_USERNAME}`,
         '--batch',
         '--skip-column-names',
-        '--database=hrms_test',
+        `--database=${schema}`,
         '--execute',
         query,
       ],

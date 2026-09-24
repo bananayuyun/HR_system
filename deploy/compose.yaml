@@ -26,8 +26,7 @@ services:
       DB_USERNAME: ${DB_USERNAME:-hr_app}
       DB_PASSWORD: ${DB_PASSWORD:?Set the production database password}
       HR_ENCRYPTION_KEY: ${HR_ENCRYPTION_KEY:?Set a base64 encoded 32-byte encryption key}
-      HR_INITIAL_ADMIN_PASSWORD: ${HR_INITIAL_ADMIN_PASSWORD:?Set the initial admin password}
-      HR_INITIAL_MANAGER_PASSWORD: ${HR_INITIAL_MANAGER_PASSWORD:?Set the initial manager password}
+      HR_USER_CENTER_BASE_URL: ${HR_USER_CENTER_BASE_URL:?Set the user center URL}
       HR_ALLOWED_ORIGINS: ${HR_ALLOWED_ORIGINS:?Set the public HTTPS origin}
       HR_SEED_DEMO: "false"
       COOKIE_SECURE: "true"

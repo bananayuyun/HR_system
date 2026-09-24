@@ -1,144 +1,63 @@
-import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import path from "node:path";
-import crypto from "node:crypto";
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
-// Run last and alone. Only the disposable test account on 8091 is changed;
-// the original password is restored in finally. No browser credential entry.
-const base = "http://127.0.0.1:8091/api";
-const original = process.env.HR_INITIAL_MANAGER_PASSWORD || "manager123";
-const temporary = "QA-Auth-" + crypto.randomBytes(12).toString("hex");
-const results = [];
-let changeAttempted = false;
+const base = 'http://127.0.0.1:8091/api';
+const marker = await fetch('http://127.0.0.1:8091/__acceptance/identity')
+  .then((response) => response.text())
+  .catch(() => '');
+if (marker !== 'mock-user-center-v1') throw new Error('Run only against the isolated acceptance backend.');
+
 function client() {
-  let cookie = "";
+  let cookie = '';
   return async (method, route, body, expected = 200) => {
     const response = await fetch(base + route, {
       method,
       headers: {
-        Origin: "http://127.0.0.1:5175",
-        Cookie: cookie,
-        ...(body ? { "Content-Type": "application/json" } : {}),
+        Origin: 'http://127.0.0.1:5175',
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     const cookies = response.headers.getSetCookie();
-    if (cookies.length)
-      cookie = cookies.map((item) => item.split(";")[0]).join("; ");
-    const data = await response.json();
-    assert.equal(
-      response.status,
-      expected,
-      `${method} ${route}: ${JSON.stringify(data)}`,
-    );
-    return data;
+    if (cookies.length) cookie = cookies.map((part) => part.split(';')[0]).join('; ');
+    const result = await response.json();
+    assert.equal(response.status, expected, `${method} ${route}: ${JSON.stringify(result)}`);
+    return result;
   };
 }
-const active = client(),
-  stale = client();
-async function login(call, password, expected = 200) {
-  return call(
-    "POST",
-    "/auth/login",
-    { username: "manager", password },
-    expected,
-  );
-}
-try {
-  await login(active, original);
-  await login(stale, original);
-  await active(
-    "POST",
-    "/auth/password",
-    { oldPassword: "Wrong-Current", newPassword: temporary },
-    400,
-  );
-  await active(
-    "POST",
-    "/auth/password",
-    { oldPassword: original, newPassword: "short" },
-    400,
-  );
-  assert.equal((await active("GET", "/auth/me")).user.username, "manager");
-  results.push({
-    name: "Wrong current password and too-short replacement reject without ending the valid session",
-    status: "PASS",
-  });
-  changeAttempted = true;
-  await active("POST", "/auth/password", {
-    oldPassword: original,
-    newPassword: temporary,
-  });
-  await active("GET", "/auth/me", undefined, 401);
-  await stale("GET", "/auth/me", undefined, 401);
-  await login(client(), original, 401);
-  const next = await login(active, temporary);
-  assert.equal(next.user.role, "manager");
-  results.push({
-    name: "Password change invalidates current and independent old sessions; only new password logs in",
-    status: "PASS",
-  });
-} catch (error) {
-  results.push({
-    name: "Password API regression",
-    status: "FAIL",
-    error: error.message,
-  });
-} finally {
-  try {
-    if (changeAttempted) {
-      const restore = client();
-      let temporaryIsActive = false;
-      try {
-        await login(restore, temporary);
-        temporaryIsActive = true;
-      } catch {
-        // A response can be lost after a successful password write. Check both
-        // known credentials before deciding whether restoration is required.
-        await login(client(), original);
-      }
-      if (temporaryIsActive) {
-        await restore("POST", "/auth/password", {
-          oldPassword: temporary,
-          newPassword: original,
-        });
-      }
-    }
-    await login(client(), original);
-    if (changeAttempted) await login(client(), temporary, 401);
-    results.push({
-      name: "Original test account password restored and verified",
-      status: "PASS",
-    });
-  } catch (error) {
-    results.push({
-      name: "RESTORE FAILED: test manager account needs recovery",
-      status: "FAIL",
-      error: error.message,
-    });
-  }
-  const out = path.resolve(
-    import.meta.dirname,
-    "../.local/verification/auth-contract.json",
-  );
-  await fs.writeFile(
-    out,
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        base,
-        browserCredentialMutation: false,
-        results,
-      },
-      null,
-      2,
-    ),
-  );
-}
-console.log(
-  JSON.stringify({
-    passed: results.filter((r) => r.status === "PASS").length,
-    failed: results.filter((r) => r.status === "FAIL").length,
-  }),
-);
-if (results.some((r) => r.status === "FAIL")) process.exitCode = 1;
+
+const first = client();
+const second = client();
+await first('POST', '/auth/login', { username: 'manager', password: 'wrong' }, 401);
+const signedIn = await first('POST', '/auth/login', {
+  username: 'manager',
+  password: 'manager123',
+});
+assert.equal(signedIn.user.authSource, 'userCenter');
+assert.equal(signedIn.user.dataScope, 'SELF_ORG_TREE');
+await second('POST', '/auth/login', { username: 'manager', password: 'manager123' });
+const refused = await first('POST', '/auth/password', {
+  oldPassword: 'manager123',
+  newPassword: 'another-password',
+}, 400);
+assert.match(refused.message, /用户中心修改密码/);
+assert.equal((await first('GET', '/auth/me')).user.username, 'manager');
+assert.equal((await second('GET', '/auth/me')).user.username, 'manager');
+await first('POST', '/auth/logout', {});
+await first('GET', '/auth/me', undefined, 401);
+assert.equal((await second('GET', '/auth/me')).user.username, 'manager');
+
+const report = {
+  generatedAt: new Date().toISOString(),
+  checks: [
+    'Mock user-center rejects an invalid password',
+    'Current login records user-center source and department scope',
+    'Local password change is refused without ending active sessions',
+    'Logout ends only the current session',
+  ],
+};
+const output = path.resolve(import.meta.dirname, '../.local/verification/auth-contract.json');
+await fs.writeFile(output, JSON.stringify(report, null, 2));
+console.log(JSON.stringify({ passed: report.checks.length, failed: 0 }));

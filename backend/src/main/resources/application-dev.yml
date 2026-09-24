@@ -4,4 +4,5 @@ spring:
     username: ${DB_USERNAME:hr_app}
     password: ${DB_PASSWORD:}
 hr:
+  user-center-base-url: ${HR_USER_CENTER_BASE_URL:https://test.medianos.com/smart-site-cloud/user}
   seed-demo: ${HR_SEED_DEMO:true}

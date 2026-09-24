@@ -46,7 +46,7 @@ import {
   reqArrived,
   lastInterview,
 } from './store';
-import { routes, schemas, PRE_ENTRY } from './config/schema';
+import { routes, schemas, PRE_ENTRY, employeeTypes } from './config/schema';
 const ResumeBatchDialog = defineAsyncComponent(() => import('./components/ResumeBatchDialog.vue'));
 const ReminderDialog = defineAsyncComponent(() => import('./components/ReminderDialog.vue'));
 const SequenceDialog = defineAsyncComponent(() => import('./components/SequenceDialog.vue'));
@@ -60,6 +60,7 @@ const booting = ref(true),
   pageError = ref(''),
   login = reactive({ username: '', password: '' });
 const navSearch = ref(''),
+  navSearchOpen = ref(false),
   collapsed = ref(false),
   mobile = ref(false),
   treeCollapsed = ref(false),
@@ -101,20 +102,37 @@ const theme = {
 };
 const page = computed(() => routes[route.value] || routes.roster);
 const type = computed(() => page.value[2]);
+const screeningRoute = computed(() => ['screening', 'deptscreening'].includes(route.value));
+const departmentScreening = computed(
+  () => route.value === 'deptscreening' || (route.value === 'screening' && !isHr.value),
+);
 const groups = computed(() =>
   ['员工管理', '招聘管理', '资产管理']
     .map((label, i) => ({
       label,
       icon: ['e808', 'e718', 'e807'][i],
-      items: menus.value.filter(
-        (k) => routes[k][1] === label && routes[k][0].includes(navSearch.value),
-      ),
+      items: menus.value.filter((k) => routes[k][1] === label),
     }))
     .filter((g) => g.items.length),
 );
+const navMatches = computed(() => {
+  const term = navSearch.value.trim().toLowerCase();
+  if (!term) return [];
+  return groups.value.flatMap((group) =>
+    group.items
+      .filter((key) => routes[key][0].toLowerCase().includes(term))
+      .map((key) => ({ key, group: group.label, label: routes[key][0] })),
+  );
+});
+function selectNavResult(key) {
+  if (!key) return;
+  navigate(key);
+  navSearch.value = '';
+  navSearchOpen.value = false;
+}
 const editable = computed(() =>
-  route.value === 'screening'
-    ? can(isHr.value ? 'screening:hr' : 'screening:department')
+  screeningRoute.value
+    ? can(departmentScreening.value ? 'screening:department' : 'screening:hr')
     : can(
         { interviews: 'interviews', offers: 'offers', settings: 'settings' }[route.value] +
           ':write',
@@ -124,8 +142,8 @@ const org = computed(() => db.orgs.find((o) => o.id === orgId.value) || db.orgs[
 watch(
   () => db.orgs,
   () => {
-    if (orgId.value === 'ORG_ROOT')
-      orgId.value = db.orgs.find((o) => o.id === 'ORG_18')?.id || db.orgs[0]?.id;
+    if (!db.orgs.some((o) => o.id === orgId.value) || (!isHr.value && orgId.value === 'ORG_ROOT'))
+      orgId.value = db.orgs.find((o) => o.id === user.value?.departmentId)?.id || db.orgs[0]?.id;
   },
 );
 const people = computed(() =>
@@ -156,8 +174,8 @@ watch(orgId, () => searchPeople(true));
 watch(orgPeopleSize, () => (orgPeoplePage.value = 1));
 watch(people, () => (orgPeoplePage.value = Math.min(orgPeoplePage.value, orgPeoplePages.value)));
 const stageTabs = computed(() =>
-  route.value === 'screening'
-    ? [isHr.value ? '待 HR 筛选' : '待部门筛选', '暂缓筛选', '未通过', '候选人取消']
+  screeningRoute.value
+    ? [departmentScreening.value ? '待部门筛选' : '待 HR 筛选', '暂缓筛选', '未通过', '候选人取消']
     : route.value === 'interviews'
       ? ['初试', '复试', '未通过', '候选人取消']
       : route.value === 'offers'
@@ -176,12 +194,14 @@ const rawRows = computed(() => {
         !r.archived &&
         (r.status === '已离职') === leftView.value,
     );
-  if (route.value === 'screening') {
-    const pending = isHr.value ? '待 HR 筛选' : '待部门筛选';
+  if (screeningRoute.value) {
+    const pending = departmentScreening.value ? '待部门筛选' : '待 HR 筛选';
     rows = rows.filter(
       (c) =>
-        c.stage === pending ||
-        (c.stage === '暂缓筛选' && (!c.deferredFrom || c.deferredFrom === pending)),
+        Boolean(c.req) &&
+        (!departmentScreening.value || !c.returned) &&
+        (c.stage === pending ||
+          (c.stage === '暂缓筛选' && (!c.deferredFrom || c.deferredFrom === pending))),
     );
   }
   if (route.value === 'interviews')
@@ -194,9 +214,15 @@ const rawRows = computed(() => {
   return rows;
 });
 function fieldValue(row, key) {
+  if (route.value === 'interviews') {
+    if (key === 'interviewer') return lastInterview(row)?.interviewer || '';
+    if (key === 'date') return lastInterview(row)?.date || '';
+    if (key === 'interviewStatus') return lastInterview(row)?.status || '待安排';
+    if (key === 'location') return row.workRegion || row.location || '';
+  }
   if (key === 'mainDept') return deptName(row.mainDept || topDept(row.dept)?.id);
   if (key === 'dept') return deptName(row.dept);
-  if (key === 'job') return jobName(row.job);
+  if (key === 'job') return jobName(row.job, row.historicalJobName);
   if (key === 'req') return reqName(row.req);
   return row[key] ?? '';
 }
@@ -206,7 +232,7 @@ const filteredRows = computed(() => {
     if (tab.value !== '全部' && (r.stage || r.status) !== tab.value) return false;
     if (
       q.q &&
-      ![r.name, r.id, r.phone, r.email, jobName(r.job), reqName(r.req)].some((v) =>
+      ![r.name, r.id, r.phone, r.email, jobName(r.job, r.historicalJobName), reqName(r.req)].some((v) =>
         String(v || '')
           .toLowerCase()
           .includes(q.q.toLowerCase()),
@@ -219,6 +245,7 @@ const filteredRows = computed(() => {
       'workRegion',
       'workplace',
       'contractCompany',
+      'workType',
       'status',
       'source',
       'req',
@@ -230,16 +257,23 @@ const filteredRows = computed(() => {
       if (
         q[k] &&
         String(
-          r[k] ?? (k === 'workRegion' ? r.location : k === 'contractCompany' ? r.company : ''),
+          k === 'workRegion'
+            ? r.workRegion || r.location || ''
+            : k === 'contractCompany'
+              ? r.contractCompany || r.company || ''
+              : r[k] ?? '',
         ) !== String(q[k])
       )
         return false;
-    if (
-      q.interviewer &&
-      !lastInterview(r)?.interviewerIds?.includes(q.interviewer) &&
-      !lastInterview(r)?.interviewer?.includes(q.interviewer)
-    )
-      return false;
+    if (q.interviewer) {
+      const interview = lastInterview(r);
+      const interviewer = db.emps.find((e) => e.id === q.interviewer);
+      if (
+        !interview?.interviewerIds?.includes(q.interviewer) &&
+        !String(interview?.interviewer || '').split('、').includes(interviewer?.name)
+      )
+        return false;
+    }
     if (q.interviewStatus && (lastInterview(r)?.status || '待安排') !== q.interviewStatus)
       return false;
     const d =
@@ -274,43 +308,44 @@ const filterFields = computed(() => {
     dict = (k) => (db.baseSettings[k] || []).map((x) => x.name),
     result = [];
   const add = (key, label, options) => result.push({ key, label, options });
-  if (['screening', 'offers', 'pool'].includes(route.value))
+  if (['screening', 'deptscreening', 'offers', 'pool'].includes(route.value))
     add(
       'req',
       '请选择招聘需求',
-      db.reqs.map((r) => ({ value: r.id, label: r.name })),
+      db.reqHistory
+        .filter((req) => rawRows.value.some((r) => r.req === req.id))
+        .map((r) => ({ value: r.id, label: r.name })),
     );
   if (route.value === 'interviews') {
-    add('workRegion', '请选择工作片区', dict('workRegion'));
-    add('workplace', '请选择工作所在地', dict('workplace'));
+    const rows = rawRows.value;
+    const values = (get) => [...new Set(rows.map(get).filter(Boolean))];
+    add(
+      'req',
+      '请选择招聘需求',
+      db.reqHistory.filter((req) => rows.some((r) => r.req === req.id)).map((r) => ({ value: r.id, label: r.name })),
+    );
     add(
       'job',
       '请选择招聘岗位',
-      db.jobs.map((j) => ({ value: j.id, label: j.name })),
+      db.jobs.filter((j) => rows.some((r) => r.job === j.id)).map((j) => ({ value: j.id, label: j.name })),
     );
+    add('workRegion', '请选择工作片区', values((r) => r.workRegion || r.location));
+    add('workplace', '请选择工作所在地', values((r) => r.workplace));
     add('q', '请输入候选人姓名/手机号', []);
-    add('dept', '请选择部门', orgs);
     add('date', '面试日期区间', []);
-    add(
-      'req',
-      '请选择招聘需求',
-      db.reqs.map((r) => ({ value: r.id, label: r.name })),
+    const interviewerIds = new Set(rows.flatMap((r) => lastInterview(r)?.interviewerIds || []));
+    const interviewerNames = new Set(
+      rows.flatMap((r) => String(lastInterview(r)?.interviewer || '').split('、').filter(Boolean)),
     );
     add(
       'interviewer',
       '请选择面试官',
-      db.emps.map((e) => ({ value: e.id, label: e.name })),
+      db.emps
+        .filter((e) => interviewerIds.has(e.id) || interviewerNames.has(e.name))
+        .map((e) => ({ value: e.id, label: e.name })),
     );
-    add('interviewStatus', '请选择面试状态', [
-      '待安排',
-      '待面试',
-      '待评价',
-      '已完成',
-      '已取消',
-      '未到场',
-    ]);
-    add('contractCompany', '请选择合同归属', dict('contractCompany'));
-    add('source', '请选择简历来源', ['Boss 直聘', '内部推荐', '猎聘', '其它']);
+    add('interviewStatus', '请选择面试状态', values((r) => lastInterview(r)?.status || '待安排'));
+    add('source', '请选择简历来源', values((r) => r.source));
     return result;
   }
   if (route.value === 'grades') add('sequence', '请选择职务序列', db.sequences);
@@ -322,7 +357,10 @@ const filterFields = computed(() => {
       '请选择部门',
       orgs.filter((o) => db.orgs.find((x) => x.id === o.value)?.parent === 'ORG_ROOT'),
     );
-  } else if (!['roster', 'screening', 'offers', 'pool'].includes(route.value))
+  } else if (
+    route.value === 'deptscreening' ||
+    !['roster', 'screening', 'offers', 'pool'].includes(route.value)
+  )
     add('dept', '请选择部门', orgs);
   if (!['grades', 'jobs'].includes(route.value)) {
     add('workRegion', '请选择工作片区', dict('workRegion'));
@@ -330,6 +368,7 @@ const filterFields = computed(() => {
   }
   if (['roster', 'offers', 'reqs'].includes(route.value))
     add('contractCompany', '请选择合同归属', dict('contractCompany'));
+  if (route.value === 'roster') add('workType', '请选择类型', employeeTypes);
   if (['roster', 'assets', 'reqs', 'jobs', 'orgs'].includes(route.value))
     add('status', '请选择状态', [...new Set(rawRows.value.map((r) => r.status))]);
   if (route.value === 'roster')
@@ -338,7 +377,7 @@ const filterFields = computed(() => {
       '请选择职级',
       db.grades.map((g) => g.code),
     );
-  if (['screening', 'pool'].includes(route.value))
+  if (['screening', 'deptscreening', 'pool'].includes(route.value))
     add('source', '请选择简历来源', ['Boss 直聘', '内部推荐', '猎聘', '其它']);
   if (!['grades', 'jobs', 'orgs'].includes(route.value)) add('date', '日期区间', []);
   return result;
@@ -377,6 +416,10 @@ const reqOverview = computed(() => {
   ];
 });
 function applyQuery() {
+  if (route.value === 'interviews') {
+    delete query.dept;
+    delete query.contractCompany;
+  }
   applied.value = { ...query };
   selected.value = new Set();
 }
@@ -410,9 +453,7 @@ async function loginSubmit() {
     });
     user.value = result.user || result;
     await refresh();
-    navigate(
-      menus.value.includes(route.value) ? route.value : isHr.value ? 'roster' : menus.value[0],
-    );
+    navigate(menus.value.includes(route.value) ? route.value : isHr.value ? 'roster' : 'screening');
     login.password = '';
   } catch (e) {
     loginError.value = e.message;
@@ -435,7 +476,7 @@ async function load() {
   pageError.value = '';
   try {
     await refresh();
-    if (!menus.value.includes(route.value)) navigate(menus.value[0]);
+    if (!menus.value.includes(route.value)) navigate(isHr.value ? 'roster' : 'screening');
   } catch (e) {
     pageError.value = e.message;
   } finally {
@@ -561,7 +602,7 @@ async function handleAction(kind, row) {
       return;
     }
     if (kind === 'reqCandidates') {
-      if (!navigate('pool')) return;
+      if (!navigate(isHr.value ? 'pool' : 'screening')) return;
       await nextTick();
       query.req = row.id;
       applyQuery();
@@ -694,7 +735,7 @@ async function saved(message, close = true) {
             </div>
             <span class="login-welcome">欢迎使用</span>
             <h2>登录账号</h2>
-            <p>请输入账号和密码。</p>
+            <p>请输入用户中心账号和密码。</p>
             <div class="v-field">
               <label for="username">账号</label>
               <input
@@ -742,19 +783,43 @@ async function saved(message, close = true) {
             >{{ user.displayName }} · {{ isHr ? 'HR 管理员' : deptName(user.departmentId) }}</span
           >
           <div class="auth-actions">
-            <button class="v-link" @click="handleAction('password')">修改密码</button>
+            <button v-if="user.authSource !== 'userCenter'" class="v-link" @click="handleAction('password')">修改密码</button>
             <button class="v-link" @click="logout">退出</button>
           </div>
         </div>
       </header>
       <aside class="v-side" aria-label="系统导航">
-        <div class="v-nav-search">
+        <div
+          class="v-nav-search"
+          @focusout="navSearchOpen = $event.currentTarget.contains($event.relatedTarget)"
+        >
           <input
             v-model="navSearch"
             class="inp"
             placeholder="请输入菜单名称进行快捷跳转"
             aria-label="搜索菜单"
+            autocomplete="off"
+            @focus="navSearchOpen = true"
+            @keydown.enter.prevent="selectNavResult(navMatches[0]?.key)"
+            @keydown.esc="navSearchOpen = false"
           />
+          <button
+            v-if="navSearch"
+            type="button"
+            class="v-nav-search-clear"
+            aria-label="清除菜单搜索"
+            @click="navSearch = ''; navSearchOpen = false"
+          >×</button>
+          <div v-if="navSearchOpen && navSearch.trim()" class="v-nav-search-results" aria-label="菜单搜索结果">
+            <button
+              v-for="result in navMatches"
+              :key="result.key"
+              type="button"
+              class="v-nav-search-result"
+              @click="selectNavResult(result.key)"
+            ><span>{{ result.group }}</span><span class="v-nav-search-separator">/</span><strong>{{ result.label }}</strong></button>
+            <div v-if="!navMatches.length" class="v-nav-search-empty">没有匹配的菜单</div>
+          </div>
         </div>
         <nav class="v-nav">
           <details v-for="g in groups" :key="g.label" class="v-group" open>
@@ -818,12 +883,15 @@ async function saved(message, close = true) {
           <div v-if="pageError" class="v-error error-retry" role="alert"
             >{{ pageError }}<button class="v-link" @click="load">重新加载</button>
           </div>
-          <div v-if="route === 'screening'" class="v-hint">
-            <template v-if="isHr"
+          <div v-if="screeningRoute" class="v-hint">
+            <template v-if="!departmentScreening"
               >当前仅展示待 HR
               筛选的简历。筛选通过后，状态将变为“待部门筛选”，并从当前待办中移除；可在简历库或招聘需求的候选人入口追踪进度。
               <button class="v-link" @click="handleAction('reminders')">查看提醒规则</button>
             </template>
+            <template v-else-if="isHr"
+              >当前展示全部部门待筛选的简历，可按部门查询。通过后将进入初试；处理结果会实时同步。</template
+            >
             <template v-else
               >当前仅展示待部门筛选的简历。通过后将进入初试；HR
               与部门主管看到的候选状态会实时同步。</template
@@ -870,13 +938,14 @@ async function saved(message, close = true) {
                   >组织信息</button
                 >
                 <button
+                  v-if="isHr"
                   class="btn"
                   :class="{ 'pri-btn': orgTab === 'people' }"
                   @click="orgTab = 'people'"
                   >组织人员</button
                 >
               </div>
-              <template v-if="orgTab === 'people'">
+              <template v-if="orgTab === 'people' && isHr">
                 <div class="w3-org-people-query">
                   <label class="w-search-field">
                     <input
@@ -920,7 +989,7 @@ async function saved(message, close = true) {
                         <td>{{ (orgPeoplePage - 1) * orgPeopleSize + i + 1 }}</td>
                         <td>{{ p.name }}</td>
                         <td>{{ p.phone }}</td>
-                        <td>{{ jobName(p.job) }}</td>
+                        <td>{{ jobName(p.job, p.historicalJobName) }}</td>
                         <td>
                           <button class="v-link" @click="handleAction('orgEmployee', p)"
                             >查看</button
@@ -1216,6 +1285,7 @@ async function saved(message, close = true) {
         :type="dialog.type"
         :row="dialog.row"
         :rows="dialog.rows"
+        :department-screening="departmentScreening"
         @close="closeDialog"
         @saved="saved"
         @action="handleAction"

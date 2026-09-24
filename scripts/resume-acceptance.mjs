@@ -10,7 +10,8 @@ const base = 'http://127.0.0.1:8091/api';
 const tag = 'QARESUME' + Date.now().toString(36).toUpperCase();
 const results = [];
 let cookie = '',
-  candidate;
+  candidate,
+  unboundCandidate;
 const headers = () => ({ Cookie: cookie, Origin: 'http://127.0.0.1:5175' });
 async function json(method, url, body, expected = 200) {
   const r = await fetch(base + url, {
@@ -109,6 +110,47 @@ try {
     education: '本科',
     years: 3,
   };
+  await check('Resume can enter the pool before a recruitment request and later be linked', async () => {
+    const unboundId = tag + 'UNBOUND';
+    const unboundPhone = '188' + String(Date.now()).slice(-8);
+    unboundCandidate = await upload('/resumes', unboundId + '.docx', docx, {
+      id: unboundId,
+      name: '待关联简历',
+      phone: unboundPhone,
+      source: '内部推荐',
+      education: '待核对',
+      years: 0,
+    });
+    assert.equal(unboundCandidate.stage, '待关联需求');
+    assert.equal(unboundCandidate.req, '');
+    assert.equal(unboundCandidate.files.length, 1);
+    assert.ok((await json('GET', '/bootstrap')).candidates.some((item) => item.id === unboundId));
+    const managerLogin = await fetch(base + '/auth/login', {
+      method: 'POST',
+      headers: { Origin: 'http://127.0.0.1:5175', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'manager', password: process.env.HR_INITIAL_MANAGER_PASSWORD || 'manager123' }),
+    });
+    assert.equal(managerLogin.status, 200);
+    const managerCookie = managerLogin.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+    const managerRead = await fetch(base + '/candidates/' + unboundId, {
+      headers: { Origin: 'http://127.0.0.1:5175', Cookie: managerCookie },
+    });
+    assert.equal(managerRead.status, 403);
+    const file = await fetch(base + '/candidates/files/' + unboundCandidate.files[0].id, {
+      headers: headers(),
+    });
+    assert.equal(file.status, 200);
+    assert.deepEqual(Buffer.from(await file.arrayBuffer()), Buffer.from(docx));
+    const linked = await json('PUT', '/candidates/' + unboundId, {
+      version: unboundCandidate.version,
+      req: request.id,
+      workRegion: dict('workRegion'),
+      workplace: dict('workplace'),
+    });
+    assert.equal(linked.req, request.id);
+    assert.equal(linked.stage, '待 HR 筛选');
+    assert.equal(linked.files.length, 1);
+  });
   await check(
     'Candidate creation and original attachment commit together; download bytes match',
     async () => {
@@ -134,6 +176,11 @@ try {
     const fresh = await json('GET', '/candidates/' + tag);
     for (const file of fresh.files || []) await json('DELETE', '/candidates/files/' + file.id);
     await json('DELETE', '/candidates/' + tag);
+  }
+  if (unboundCandidate) {
+    const fresh = await json('GET', '/candidates/' + unboundCandidate.id);
+    for (const file of fresh.files || []) await json('DELETE', '/candidates/files/' + file.id);
+    await json('DELETE', '/candidates/' + unboundCandidate.id);
   }
   const report = {
     generatedAt: new Date().toISOString(),

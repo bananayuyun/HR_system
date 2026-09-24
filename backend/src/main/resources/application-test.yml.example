@@ -6,5 +6,6 @@ spring:
     username: TEST_DB_USERNAME
     password: TEST_DB_PASSWORD
 hr:
+  user-center-base-url: ${HR_USER_CENTER_BASE_URL:https://test.medianos.com/smart-site-cloud/user}
   seed-demo: false
   allowed-origins: http://TEST_FRONTEND_HOST

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -28,18 +29,32 @@ class ImportOwnerAndLogTest {
   }
 
   @Test
+  void fileHashUsesTheExactUploadedBytes() {
+    var file = new MockMultipartFile("file", "sample.csv", "text/csv", "abc".getBytes());
+    assertEquals(
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        service.hash(admin, "emps", file).get("sha256"));
+    assertEquals(
+        400,
+        assertThrows(
+                ApiException.class,
+                () -> service.hash(admin, "emps", new MockMultipartFile("file", new byte[0])))
+            .status);
+  }
+
+  @Test
   void newRequestUsesTheCurrentAccountsEmployeeNotItsDisplayName() {
     when(jdbc.queryForList(contains("JOIN employee e ON e.id=u.employee_id"), eq(1L)))
         .thenReturn(List.of(Db.map("employee_no", "E0005")));
     var row = Db.map("name", "招聘岗位");
-    service.defaultRequestOwner(admin, row, true);
+    service.defaultRequestOwner(admin, row, true, Map.of());
     assertEquals(List.of("E0005"), row.get("ownerIds"));
   }
 
   @Test
   void updateWithoutOwnerDoesNotReplaceExistingOwnership() {
     var row = Db.map("name", "改名");
-    service.defaultRequestOwner(admin, row, false);
+    service.defaultRequestOwner(admin, row, false, Map.of());
     assertFalse(row.containsKey("ownerIds"));
     verifyNoInteractions(jdbc);
   }
@@ -47,10 +62,10 @@ class ImportOwnerAndLogTest {
   @Test
   void explicitOwnersIncludingEmptyListAreNeverReplacedWithTheDefault() {
     var row = Db.map("ownerIds", List.of());
-    service.defaultRequestOwner(admin, row, true);
+    service.defaultRequestOwner(admin, row, true, Map.of());
     assertEquals(List.of(), row.get("ownerIds"));
     var named = Db.map("owner", "不存在的负责人");
-    service.defaultRequestOwner(admin, named, true);
+    service.defaultRequestOwner(admin, named, true, Map.of());
     assertFalse(named.containsKey("ownerIds"));
     verifyNoInteractions(jdbc);
   }
@@ -61,8 +76,18 @@ class ImportOwnerAndLogTest {
         400,
         assertThrows(
                 ApiException.class,
-                () -> service.defaultRequestOwner(admin, new LinkedHashMap<>(), true))
+                () -> service.defaultRequestOwner(admin, new LinkedHashMap<>(), true, Map.of()))
             .status);
+  }
+
+  @Test
+  void unboundAccountCanUseAnExplicitDefaultOwner() {
+    when(jdbc.queryForList(contains("FROM employee WHERE employee_no=?"), eq("E0005")))
+        .thenReturn(List.of(Db.map("employee_no", "E0005")));
+    var row = Db.map("name", "招聘岗位");
+    service.defaultRequestOwner(admin, row, true, Map.of("defaultOwnerId", "E0005"));
+    assertEquals(List.of("E0005"), row.get("ownerIds"));
+    verify(jdbc, never()).queryForList(contains("JOIN employee e ON e.id=u.employee_id"), eq(1L));
   }
 
   @Test

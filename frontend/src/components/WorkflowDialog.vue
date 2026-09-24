@@ -7,7 +7,13 @@ import { db, isHr, user, lastInterview, within } from '../store';
 import { materialTypes } from '../config/schema';
 import QRCode from 'qrcode';
 import { readDocxText } from '../utils/docx-preview';
-const props = defineProps({ kind: String, type: String, row: Object, rows: Array });
+const props = defineProps({
+  kind: String,
+  type: String,
+  row: Object,
+  rows: Array,
+  departmentScreening: Boolean,
+});
 const emit = defineEmits(['close', 'saved', 'action']);
 const today = new Date().toLocaleDateString('sv-SE'),
   form = ref(),
@@ -21,7 +27,7 @@ const previewText = ref(''),
   previewTruncated = ref(false),
   previewLoading = ref(false),
   previewAbort = new AbortController();
-const request = db.reqs.find((r) => r.id === props.row?.req),
+const request = db.reqs.find((r) => r.id === props.row?.req) || db.reqHistory.find((r) => r.id === props.row?.req),
   interview = lastInterview(props.row || {}),
   pending =
     interview &&
@@ -102,7 +108,8 @@ const assetNames = {
   location: '变更存放位置',
 };
 const screenConfirmation = computed(() => props.kind === 'screening' && !!props.row?.result),
-  screeningPass = computed(() => data.value.result === '通过');
+  screeningPass = computed(() => data.value.result === '通过'),
+  hrScreening = computed(() => isHr.value && !props.departmentScreening);
 const title = computed(() => {
   if (screenConfirmation.value)
     return screeningPass.value
@@ -111,7 +118,7 @@ const title = computed(() => {
           data.value.result
         ] || '确认筛选处理';
   if (props.kind === 'screening')
-    return (isHr.value ? 'HR 筛选' : '部门筛选') + ' · ' + props.row.name;
+    return (hrScreening.value ? 'HR 筛选' : '部门筛选') + ' · ' + props.row.name;
   if (props.kind === 'schedule')
     return (pending ? '调整' : '安排') + props.row.stage + ' · ' + props.row.name;
   if (props.kind === 'interviewResult') return props.row.stage + '结果 · ' + props.row.name;
@@ -122,7 +129,7 @@ const title = computed(() => {
     {
       permanentDelete: '彻底删除员工档案',
       reinstate: '复职',
-      delete: '删除记录',
+      delete: props.type === 'reqs' ? '删除招聘需求' : '删除记录',
       batchScreen: '批量筛选 · ' + (props.rows?.length || 0) + ' 人',
       cancelInterview: '取消面试安排',
       candidateActions: '候选人流程处理',
@@ -157,7 +164,7 @@ const employees = computed(() =>
         !e.deletedAt &&
         !e.archived &&
         !e.deleted &&
-        e.status !== '已离职' &&
+        !['已离职', '待离职'].includes(e.status) &&
         (props.kind !== 'asset' || e.status !== '待离职'),
     )
     .map((e) => ({ value: e.id, label: e.name + ' / ' + e.id })),
@@ -173,7 +180,10 @@ const fields = computed(() => {
         : [
             f('handler', '处理负责人', 'select', true, [data.value.handler]),
             f('result', '筛选结果', 'select', true, [
-              { value: '通过', label: isHr.value ? '通过，提交部门筛选' : '通过并进入初试' },
+              {
+                value: '通过',
+                label: hrScreening.value ? '通过，提交部门筛选' : '通过并进入初试',
+              },
               { value: '暂缓', label: '暂缓筛选' },
               '未通过',
               '候选人取消',
@@ -246,16 +256,21 @@ const fields = computed(() => {
       return [
         f('date', '日期', 'date', true),
         f('type', '事件类型', 'select', true, [
-          '入职',
-          '转正',
-          '晋升',
-          '调薪',
-          '调岗',
-          '奖励',
-          '处分',
-          '绩效',
-          '培训',
-          '其它',
+          ...new Set([
+            '入职',
+            '转正',
+            '晋升',
+            '调薪',
+            '调岗',
+            '奖励',
+            '处分',
+            '绩效',
+            '培训',
+            '其它',
+            ...(props.kind === 'timelineEdit' && props.row?.item?.type
+              ? [props.row.item.type]
+              : []),
+          ]),
         ]),
         f('title', '事件标题', 'text', true),
         f('detail', '事件说明', 'textarea', true),
@@ -302,7 +317,7 @@ const screenMessage = computed(() =>
     ? '确定将“' +
       props.row?.name +
       '”筛选通过' +
-      (isHr.value ? '，并转交部门主管筛选' : '并进入初试') +
+      (hrScreening.value ? '，并转交部门主管筛选' : '并进入初试') +
       '吗？'
     : '确定将“' +
       props.row?.name +
@@ -316,7 +331,7 @@ const screenMessage = computed(() =>
 );
 const screenEffect = computed(() =>
   screeningPass.value
-    ? isHr.value
+    ? hrScreening.value
       ? '确认后状态变为“待部门筛选”，该候选人将从 HR 待办中移除，并同步进入部门主管待办。'
       : '确认后将进入面试管理，其他负责人看到的状态会同步更新。'
     : data.value.result === '暂缓'
@@ -357,8 +372,12 @@ onMounted(async () => {
       }
     }
     if (props.kind === 'audit') {
-      const record = await api('/' + props.type + '/' + props.row.id);
-      logs.value = record.audit || record.history || record.timeline || [];
+      if (props.type === 'jobs')
+        logs.value = await api('/jobs/' + props.row.id + '/audit');
+      else {
+        const record = await api('/' + props.type + '/' + props.row.id);
+        logs.value = record.audit || record.history || record.timeline || [];
+      }
     }
     if (props.kind === 'previewFile' && previewType.value !== 'download') {
       previewLoading.value = true;
@@ -763,12 +782,17 @@ async function save() {
         }}</div
       >
       <div v-else-if="['screening', 'batchScreen'].includes(kind)" class="v-hint">{{
-        isHr
+        hrScreening
           ? 'HR 通过后交给招聘需求配置的部门筛选负责人，不直接进入初试。'
           : '筛选通过后进入初试，其他筛选负责人可同步查看处理结果。'
       }}</div>
-      <p v-else-if="kind === 'permanentDelete'">确定彻底删除员工【{{ row.name }}】吗？须先办理离职，并解除账号、业务和档案材料关联。</p>
+      <p v-else-if="kind === 'permanentDelete'"
+        >确定彻底删除员工【{{ row.name }}】吗？须先办理离职，并解除账号、业务和档案材料关联。</p
+      >
       <p v-else-if="kind === 'reinstate'">确定为员工【{{ row.name }}】办理复职吗？</p>
+      <p v-else-if="kind === 'delete' && type === 'reqs'"
+        >确定删除【{{ row.name || row.code }}】吗？关联候选人的招聘历史会保留。</p
+      >
       <p v-else-if="kind === 'delete'"
         >确定删除【{{ row.name || row.code }}】吗？已被业务使用的记录不能删除。</p
       >

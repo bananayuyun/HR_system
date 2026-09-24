@@ -169,7 +169,7 @@ try {
       "Login page has no account hints or perspective switch; invalid login is rejected",
       async () => {
         await page.goto(base + "/#/roster");
-        await page.getByRole("heading", { name: "登录人力资源平台" }).waitFor();
+        await page.getByRole("heading", { name: "登录账号" }).waitFor();
         const text = await page.locator("body").innerText();
         assert.ok(!/admin123|manager123|快速登录|切换视角/.test(text));
         await page.getByLabel("账号", { exact: true }).fill("admin");
@@ -181,12 +181,12 @@ try {
         assert.equal((await rejected).status(), 401);
         await page
           .getByRole("alert")
-          .filter({ hasText: "用户名或密码错误" })
+          .filter({ hasText: "测试用户中心拒绝登录" })
           .waitFor();
       },
     );
     await check(
-      "Admin logs in through real UI and receives all 11 server-authorized menus",
+      "HR logs in through real UI and receives all 12 server-authorized menus",
       async () => {
         await login(page, "admin", adminPassword);
         bootstrap = await json(context, "GET", "/bootstrap");
@@ -196,7 +196,7 @@ try {
           ),
         );
         assert.equal(bootstrap.user.role, "hr");
-        assert.equal(await page.locator(".v-nav a").count(), 11);
+        assert.equal(await page.locator(".v-nav a").count(), 12);
         assert.ok(
           !(await page.locator(".v-top").innerText()).includes("切换视角"),
         );
@@ -231,7 +231,7 @@ try {
             .click();
           let popup = page.getByRole("dialog", { name: "列设置", exact: true });
           await popup
-            .getByRole("checkbox", { name: "显示序号", exact: true })
+            .getByRole("checkbox", { name: "显示岗位名称", exact: true })
             .uncheck();
           let saved = responseFor("PUT", "/preferences/jobs");
           await popup
@@ -242,7 +242,7 @@ try {
           await page.locator('.v-content[data-page="jobs"]').waitFor();
           await page.waitForLoadState("networkidle");
           assert.equal(
-            await page.locator('.tbl thead [data-list-key="__index"]').count(),
+            await page.locator('.tbl thead [data-list-key="name"]').count(),
             0,
           );
           await page
@@ -252,16 +252,13 @@ try {
           await popup
             .getByRole("button", { name: "恢复默认", exact: true })
             .click();
+          saved = responseFor("PUT", "/preferences/jobs");
           await page
             .getByRole("dialog", { name: "确认恢复默认列配置?" })
             .getByRole("button", { name: "确认", exact: true })
             .click();
-          saved = responseFor("PUT", "/preferences/jobs");
-          await popup
-            .getByRole("button", { name: "确认", exact: true })
-            .click();
           await assertOk(await saved);
-          await page.locator('.tbl thead [data-list-key="__index"]').waitFor();
+          await page.locator('.tbl thead [data-list-key="name"]').waitFor();
         },
       );
       await check(
@@ -524,20 +521,12 @@ try {
               undefined,
               403,
             );
-            if (employee) {
-              await search(managerPage, employee.id);
-              await managerPage
-                .locator(".tbl tbody tr")
-                .filter({ hasText: employee.id })
-                .getByRole("button", { name: "查看", exact: true })
-                .click();
-              assert.equal(
-                await managerPage
-                  .getByRole("button", { name: "编辑基本信息", exact: true })
-                  .count(),
-                0,
-              );
-            }
+            assert.equal(
+              await managerPage.locator('.v-nav').getByRole('link', { name: '员工花名册', exact: true }).count(),
+              0,
+            );
+            if (employee)
+              await json(managerContext, 'GET', `/emps/${employee.id}`, undefined, 403);
             await managerPage.screenshot({
               path: path.join(out, "manager.png"),
               fullPage: true,
@@ -643,7 +632,7 @@ try {
         await page.getByRole("button", { name: "列设置", exact: true }).click();
         let columns = page.getByRole("dialog", { name: "列设置", exact: true });
         await columns
-          .getByRole("checkbox", { name: "显示序号", exact: true })
+          .getByRole("checkbox", { name: "显示岗位名称", exact: true })
           .uncheck();
         let saved = responseFor("PUT", "/preferences/jobs");
         await columns
@@ -671,7 +660,7 @@ try {
         await assertOk(await saved);
         let prefs = await json(context, "GET", "/preferences/jobs");
         assert.equal(
-          prefs.columns.find((column) => column.key === "__index").show,
+          prefs.columns.find((column) => column.key === "name").show,
           false,
         );
         assert.ok(prefs.schemes.some((scheme) => scheme.name === prefix));
@@ -690,7 +679,7 @@ try {
         await page.getByRole("button", { name: "列设置", exact: true }).click();
         columns = page.getByRole("dialog", { name: "列设置", exact: true });
         await columns
-          .getByRole("checkbox", { name: "显示序号", exact: true })
+          .getByRole("checkbox", { name: "显示岗位名称", exact: true })
           .check();
         saved = responseFor("PUT", "/preferences/jobs");
         await columns
@@ -713,7 +702,7 @@ try {
           .click();
         assert.equal(
           (await json(context, "GET", "/preferences/jobs")).columns.find(
-            (column) => column.key === "__index",
+            (column) => column.key === "name",
           ).show,
           true,
         );
@@ -772,12 +761,13 @@ try {
             `${role}: expected server-resolved name in detail.`,
           );
         }
-        assert.ok(
-          (actual.ownerIds || []).some(
-            (id) => !scoped.emps.some((employee) => employee.id === id),
-          ),
-          "Test must cover an HR owner outside the manager employee list.",
-        );
+        const allowed = new Set(scoped.orgs.map((org) => org.id));
+        const outsideOwner = (actual.ownerIds || [])
+          .map((id) => scoped.emps.find((employee) => employee.id === id))
+          .find((employee) => employee && !allowed.has(employee.dept));
+        assert.ok(outsideOwner, "Test must cover an HR owner outside the manager department.");
+        assert.deepEqual(Object.keys(outsideOwner).sort(), ['dept', 'id', 'job', 'name', 'status']);
+        await json(context, 'GET', `/emps/${outsideOwner.id}`, undefined, 403);
       },
     );
   }

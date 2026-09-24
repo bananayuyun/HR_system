@@ -29,7 +29,7 @@ export function employeeValue(row, key, index = 0) {
   if (key === 'dept') return deptName(row.dept);
   if (key === 'group')
     return row.pendingGroup || (row.dept === topDept(row.dept)?.id ? '' : deptName(row.dept));
-  if (key === 'job') return row.pendingJob || jobName(row.job);
+  if (key === 'job') return row.pendingJob || jobName(row.job, row.historicalJobName);
   if (
     key === 'sourceAge' &&
     !row.sourceAge &&

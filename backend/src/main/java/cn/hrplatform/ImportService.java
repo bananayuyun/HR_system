@@ -1,5 +1,8 @@
 package cn.hrplatform;
 
+import java.io.OutputStream;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.util.*;
 import org.apache.poi.ss.usermodel.*;
@@ -34,6 +37,22 @@ public class ImportService {
     this.workflows = workflows;
     transaction = new TransactionTemplate(manager);
     transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+  }
+
+  public Map<String, Object> hash(Actor a, String type, MultipartFile file) {
+    hr.auditor().require(a, "imports:write");
+    checkType(type);
+    if (file.isEmpty() || file.getSize() > 20L * 1024 * 1024)
+      throw ApiException.bad("表格文件必须非空且不能超过 20 MB。");
+    try {
+      var digest = MessageDigest.getInstance("SHA-256");
+      try (var input = new DigestInputStream(file.getInputStream(), digest)) {
+        input.transferTo(OutputStream.nullOutputStream());
+      }
+      return Db.map("sha256", HexFormat.of().formatHex(digest.digest()));
+    } catch (Exception e) {
+      throw ApiException.bad("文件读取失败，请重新选择。");
+    }
   }
 
   public Map<String, Object> parse(Actor a, String type, MultipartFile file) {
@@ -206,6 +225,33 @@ public class ImportService {
     boolean preview = Boolean.TRUE.equals(body.get("validateOnly"));
     String hash = Db.str(body, "fileHash");
     if (!hash.matches("[a-fA-F0-9]{64}")) throw ApiException.bad("请提供有效的文件 SHA-256。");
+    if (!preview) {
+      var previous =
+          db.one(
+              "SELECT id,total_count,added_count,updated_count,skipped_count,error_count,error_detail"
+                  + " FROM import_log WHERE import_type=? AND file_hash=? AND status='SUCCESS'"
+                  + " ORDER BY id DESC LIMIT 1",
+              TYPES.get(type),
+              hash);
+      if (previous != null) {
+        List<?> previousRows = List.of();
+        if (previous.get("error_detail") != null) {
+          try {
+            previousRows = db.json.readValue(Db.str(previous, "error_detail"), List.class);
+          } catch (Exception e) {
+            throw new IllegalStateException("Invalid stored import report", e);
+          }
+        }
+        return Db.map(
+            "duplicate", true,
+            "importId", previous.get("id"),
+            "added", previous.get("added_count"),
+            "updated", previous.get("updated_count"),
+            "skipped", previous.get("skipped_count"),
+            "errorCount", previous.get("error_count"),
+            "rows", previousRows);
+      }
+    }
     Long importId = null;
     if (!preview) {
       try {
@@ -286,7 +332,8 @@ public class ImportService {
                 if (type.equals("timeline"))
                   workflows.action(a, "emps", Db.str(body, "employeeId"), "timeline", row);
                 else {
-                  if (type.equals("reqs")) defaultRequestOwner(a, row, finalOperation.equals("新增"));
+                  if (type.equals("reqs"))
+                    defaultRequestOwner(a, row, finalOperation.equals("新增"), body);
                   hr.saveInternal(
                       a, type, finalOperation.equals("更新") ? finalCode : null, row, true);
                 }
@@ -538,15 +585,28 @@ public class ImportService {
       }
   }
 
-  void defaultRequestOwner(Actor actor, Map<String, Object> row, boolean creating) {
+  void defaultRequestOwner(
+      Actor actor, Map<String, Object> row, boolean creating, Map<String, Object> body) {
     if (!creating || row.containsKey("ownerIds") || !Db.str(row, "owner").isBlank()) return;
+    String selected = Db.str(body, "defaultOwnerId");
+    if (!selected.isBlank()) {
+      var owner =
+          db.one(
+              "SELECT employee_no FROM employee WHERE employee_no=? AND deleted_at IS NULL"
+                  + " AND status NOT IN ('LEFT','PENDING_LEAVE')",
+              selected);
+      if (owner == null) throw ApiException.bad("所选默认 HR 负责人不存在或已离岗。");
+      row.put("ownerIds", List.of(Db.str(owner, "employee_no")));
+      return;
+    }
     var owner =
         db.one(
             "SELECT e.employee_no FROM sys_user u JOIN employee e ON e.id=u.employee_id"
                 + " WHERE u.id=? AND u.status='ACTIVE' AND e.deleted_at IS NULL"
                 + " AND e.status NOT IN ('LEFT','PENDING_LEAVE')",
             actor.id());
-    if (owner == null) throw ApiException.bad("当前账号未绑定有效在岗员工，无法确定导入需求的 HR 负责人；请先配置账号员工关联。");
+    if (owner == null)
+      throw ApiException.bad("请选择默认 HR 负责人，或在文件中填写 HR 负责人。");
     row.put("ownerIds", List.of(Db.str(owner, "employee_no")));
   }
 

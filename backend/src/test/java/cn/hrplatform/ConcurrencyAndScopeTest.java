@@ -59,4 +59,46 @@ class ConcurrencyAndScopeTest {
     assertFalse(actor.can("emps:write"));
     assertEquals(List.of(), actor.view().get("menus"));
   }
+
+  @Test
+  void managerMenuMatchesPrototypeEvenWithLegacyReadPermissions() {
+    var actor =
+        new Actor(
+            7,
+            "manager",
+            "主管",
+            List.of("DEPT_MANAGER"),
+            List.of(
+                "roster:read",
+                "grades:read",
+                "pool:read",
+                "assets:read",
+                "reqs:read",
+                "screening:read",
+                "interviews:read",
+                "offers:read",
+                "orgs:read",
+                "jobs:read"),
+            18L,
+            "ORG_18",
+            "SELF_ORG_TREE");
+    assertEquals(
+        List.of("reqs", "screening", "interviews", "offers", "orgs", "jobs"),
+        actor.view().get("menus"));
+  }
+
+  @Test
+  void hrMenuIncludesDepartmentScreeningAfterResumeScreening() {
+    var actor =
+        new Actor(
+            8,
+            "hr",
+            "HR",
+            List.of("HR_ADMIN"),
+            List.of("screening:read", "screening:hr", "screening:department"),
+            null,
+            "",
+            "ALL");
+    assertEquals(List.of("screening", "deptscreening"), actor.view().get("menus"));
+  }
 }

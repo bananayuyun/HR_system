@@ -1,6 +1,6 @@
 import metadata from './prototype-metadata.json';
 export const employeeSections = metadata.employeeSections;
-export const schemas = metadata.schemas;
+export const schemas = { ...metadata.schemas, deptscreening: metadata.schemas.screening };
 export const routes = {
   roster: ['员工花名册', '员工管理', 'emps'],
   orgs: ['组织管理', '员工管理', 'orgs'],
@@ -10,6 +10,7 @@ export const routes = {
   reqs: ['招聘需求', '招聘管理', 'reqs'],
   pool: ['简历库', '招聘管理', 'candidates'],
   screening: ['简历筛选', '招聘管理', 'candidates'],
+  deptscreening: ['部门筛选', '招聘管理', 'candidates'],
   interviews: ['面试管理', '招聘管理', 'candidates'],
   offers: ['入职管理', '招聘管理', 'candidates'],
   assets: ['资产台账', '资产管理', 'assets'],
@@ -29,6 +30,7 @@ export const dictionaryLabels = {
   contractCompany: '合同归属',
 };
 export const PRE_ENTRY = ['待入职', '延期入职', '未到岗', '放弃入职', '取消入职'];
+export const employeeTypes = ['全职', '兼职', '实习', '劳务派遣', '其它'];
 export const sensitiveFields = new Set([
   'identityNumber',
   'idNumber',
@@ -85,7 +87,9 @@ export function entitySections(type, row, db) {
     .filter((x) => x.status === '启用' || x.id === row.dept)
     .map((x) => ({ value: x.id, label: x.name }));
   const people = db.emps
-    .filter((e) => !e.deletedAt && !e.archived && !e.deleted && e.status !== '已离职')
+    .filter(
+      (e) => !e.deletedAt && !e.archived && !e.deleted && !['已离职', '待离职'].includes(e.status),
+    )
     .map((e) => ({ value: e.id, label: e.name + ' / ' + e.id }));
   const reqPeople = (idsKey, nameKey) => {
     const result = [...people],
@@ -108,6 +112,8 @@ export function entitySections(type, row, db) {
   const jobs = db.jobs
     .filter((j) => j.status === '启用' || j.id === row.job)
     .map((j) => ({ value: j.id, label: j.name }));
+  const archivedJob = db.jobHistory?.find((j) => j.id === row.job && j.deletedAt);
+  if (archivedJob) jobs.push({ value: archivedJob.id, label: `${archivedJob.name}（已归档）` });
   const geography = [
     f('workRegion', '工作片区', 'select', true, dict('workRegion')),
     f('workplace', '工作所在地', 'select', true, dict('workplace')),
@@ -153,7 +159,7 @@ export function entitySections(type, row, db) {
           f('salaryBand', '薪资档位', 'number'),
           geography[0],
           f('status', '员工状态', 'select', true, ['试用', '正式', '待离职']),
-          f('workType', '用工类型', 'select', false, ['全职', '兼职', '实习', '劳务派遣', '其它']),
+          f('workType', '用工类型', 'select', false, employeeTypes),
           f('entry', '入职日期', 'date', true),
           f('regular', '计划转正日期', 'date'),
           f('tags', '人员标签', 'text', false, [], '多个标签以逗号分隔'),

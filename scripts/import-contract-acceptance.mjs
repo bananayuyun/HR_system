@@ -239,8 +239,7 @@ try {
         undefined,
         403,
       );
-      const scoped = await manager("GET", "/emps/" + employee.id);
-      assert.notEqual(scoped.householdType, "农村");
+      await manager("GET", "/emps/" + employee.id, undefined, 403);
     },
   );
 } catch (error) {

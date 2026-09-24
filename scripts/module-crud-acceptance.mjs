@@ -214,8 +214,8 @@ async function archived(type, record) {
   const value = (await api("GET", "/bootstrap"))[type].find(
     (r) => r.id === record.id,
   );
-  assert.equal(value.deleted, true);
-  assert.ok(value.deletedAt);
+  assert.ok(!value || value.deleted, "Deleted record must not be active in bootstrap");
+  if (value) assert.ok(value.deletedAt);
   await goto(type);
   await search(record.id);
   assert.equal(
@@ -318,7 +318,7 @@ try {
       await dialog()
         .getByText(prefix + "岗位职责改动", { exact: true })
         .waitFor();
-      assert.ok((await dialog().innerText()).includes("许 HR"));
+      assert.ok((await dialog().innerText()).includes("验收 HR"));
       await rowAction("jobs", job, "查看");
       assert.ok((await dialog().innerText()).includes(prefix + "岗位职责改动"));
       await dialog()
@@ -342,7 +342,7 @@ try {
       await select("sequence", bootstrap.sequences[0]);
       await dialog()
         .getByLabel("职级编码", { exact: true })
-        .fill(prefix + "G");
+        .fill("M3");
       await dialog()
         .getByLabel("职级名称", { exact: true })
         .fill(prefix + "职级");
@@ -354,7 +354,7 @@ try {
       grade = await save("/grades", "POST");
       created.push({ type: "grades", id: grade.id });
       let fresh = await api("GET", "/grades/" + grade.id);
-      assert.equal(fresh.code, prefix + "G");
+      assert.equal(fresh.code, "M3");
       assert.equal(fresh.level, 3);
       await rowAction("grades", grade, "查看");
       await dialog()

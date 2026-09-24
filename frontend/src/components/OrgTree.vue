@@ -157,7 +157,13 @@ function toggle(id) {
       >
     </div>
   </aside>
-  <button class="w3-tree-collapse" aria-label="展开或收起组织树" @click="emit('collapse')">
+  <button
+    class="w3-tree-collapse"
+    :aria-label="collapsed ? '展开组织' : '收起组织'"
+    :title="collapsed ? '展开组织' : '收起组织'"
+    :aria-expanded="!collapsed"
+    @click="emit('collapse')"
+  >
     <Icon name="e993" />
   </button>
   <Teleport to="body"

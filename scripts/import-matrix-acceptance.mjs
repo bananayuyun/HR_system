@@ -129,6 +129,7 @@ const route = {
   timeline: "roster",
 };
 function values(type, suffix = "") {
+  const gradeCode = ({ '': 'P9', MIXOK: 'P10', MIXBAD: 'P11', MISSING: 'P12', FORBIDDEN: 'S9' })[suffix] || 'S10';
   switch (type) {
     case "emps":
       return {
@@ -145,10 +146,10 @@ function values(type, suffix = "") {
       };
     case "grades":
       return {
-        code: prefix + "G" + suffix,
+        code: gradeCode,
         name: "导入职级" + prefix + suffix,
-        sequence,
-        level: 2,
+        sequence: '专业 P',
+        level: Number(gradeCode.slice(1)),
         scope: "全部部门",
         requirements: "QAIMPORT_KEEP_REQUIREMENTS",
         min: 3,
@@ -314,7 +315,7 @@ async function openImport(type) {
           type === "emps"
             ? "导入花名册"
             : type === "reqs"
-              ? "导入钉钉招聘需求"
+              ? "导入招聘需求"
               : "导入数据",
         exact: true,
       })
@@ -343,7 +344,7 @@ async function uiRefreshVisible(type, row) {
     await tableRow.getByRole("button", { name: "查看", exact: true }).click();
     const detail = page.getByRole("dialog", { name: "员工档案", exact: true });
     await detail.getByRole("button", { name: "成长记录", exact: true }).click();
-    await detail.getByText(row.title, { exact: true }).waitFor();
+    await detail.locator('.v-timeline b').filter({ hasText: row.title }).waitFor();
   }
 }
 

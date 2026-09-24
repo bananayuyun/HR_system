@@ -114,7 +114,7 @@ await check('Maintenance audit exposes before and after values with a real actor
   assert.ok(
     audit.some(
       (a) =>
-        a.action === 'UPDATE' &&
+        a.action === '资料变更' &&
         a.changes?.some(
           (c) =>
             ['notes', 'remark'].includes(c.field) &&

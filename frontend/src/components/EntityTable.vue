@@ -49,9 +49,13 @@ const defaults = computed(() =>
     { key: '__actions', label: '操作', pin: 'right' },
   ].map((c) => ({ ...c, show: true })),
 );
-const columns = computed(() =>
-  (columnState.value[props.route] || defaults.value).filter((c) => c.show),
-);
+const defaultDataColumns = computed(() => defaults.value.filter((c) => !c.key.startsWith('__')));
+const columns = computed(() => [
+  defaults.value[0],
+  defaults.value[1],
+  ...(columnState.value[props.route] || defaultDataColumns.value).filter((c) => c.show),
+  defaults.value.at(-1),
+]);
 const resetConfirmation = ref(false),
   columnError = ref(''),
   anchor = ref({ right: '32px', top: '240px' });
@@ -59,13 +63,14 @@ async function loadPreferences() {
   const key = props.route;
   try {
     const pref = await api('/preferences/' + key);
+    const saved = Array.isArray(pref?.columns)
+      ? pref.columns.filter((c) => !c.key.startsWith('__'))
+      : [];
     if (
-      Array.isArray(pref.columns) &&
-      pref.columns.length &&
-      pref.columns.some((c) => c.show) &&
-      pref.columns.every((c) => defaults.value.some((d) => d.key === c.key))
+      saved.some((c) => c.show) &&
+      saved.every((c) => defaultDataColumns.value.some((d) => d.key === c.key))
     )
-      columnState.value[key] = pref.columns;
+      columnState.value[key] = saved;
   } catch {
     /* Preferences are optional; data access errors are handled by the page. */
   }
@@ -78,7 +83,7 @@ function cell(row, key) {
       ? '直属部门'
       : deptName(row.dept);
   if (key === 'parent') return row.parent ? deptName(row.parent) : '无上级组织';
-  if (key === 'job') return jobName(row.job);
+  if (key === 'job') return jobName(row.job, row.historicalJobName);
   if (key === 'req') return reqName(row.req);
   if (key === 'owner' && props.route === 'assets')
     return row.public === '是' ? '公共资产' : empName(row.owner);
@@ -92,9 +97,9 @@ function cell(row, key) {
   if (key === 'date') return lastInterview(row)?.date || '待安排';
   if (key === 'interviewStatus') return lastInterview(row)?.status || '待安排';
   if (key === 'screener') {
-    const req = db.reqs.find((r) => r.id === row.req);
-    if (props.route === 'screening')
-      return props.isHr
+    const req = db.reqs.find((r) => r.id === row.req) || db.reqHistory.find((r) => r.id === row.req);
+    if (['screening', 'deptscreening'].includes(props.route))
+      return props.isHr && props.route === 'screening'
         ? req?.owner || req?.ownerIds?.map(empName).join('、') || '待配置'
         : req?.screener || req?.screenerIds?.map(empName).join('、') || '待配置';
     return row.screener || req?.screener || '—';
@@ -179,14 +184,16 @@ function action(name, row) {
 function showImports(event) {
   const rect = event.currentTarget.getBoundingClientRect();
   importAnchor.value = {
-    left: Math.max(8, Math.min(innerWidth - 208, rect.right - 200)) + 'px',
-    top: rect.bottom + 8 + 'px',
+    left: Math.max(8, Math.min(rect.left, innerWidth - 168)) + 'px',
+    top: rect.bottom + 4 + 'px',
   };
   columnPopup.value = false;
   importPopup.value = !importPopup.value;
 }
 function showColumns(event) {
-  columnDraft.value = (columnState.value[props.route] || defaults.value).map((c) => ({ ...c }));
+  columnDraft.value = (columnState.value[props.route] || defaultDataColumns.value).map((c) => ({
+    ...c,
+  }));
   columnError.value = '';
   const r = event.currentTarget.getBoundingClientRect();
   anchor.value = {
@@ -214,6 +221,11 @@ async function applyColumns() {
   } catch (e) {
     columnError.value = e.message;
   }
+}
+async function resetColumns() {
+  columnDraft.value = defaultDataColumns.value.map((c) => ({ ...c }));
+  resetConfirmation.value = false;
+  await applyColumns();
 }
 function moveColumn(index, to) {
   if (to < 0 || to >= columnDraft.value.length) return;
@@ -329,7 +341,7 @@ defineExpose({ cell, columns });
       <template v-if="editable">
         <button
           v-if="
-            !['pool', 'screening', 'interviews', 'offers'].includes(route) &&
+            !['pool', 'screening', 'deptscreening', 'interviews', 'offers'].includes(route) &&
             !(route === 'roster' && leftView)
           "
           class="btn pri-btn"
@@ -353,7 +365,7 @@ defineExpose({ cell, columns });
         >
       </template>
       <button
-        v-if="route === 'screening'"
+        v-if="['screening', 'deptscreening'].includes(route)"
         class="btn"
         :disabled="!selected.size"
         @click="action('batchScreen')"
@@ -454,7 +466,7 @@ defineExpose({ cell, columns });
                 <template
                   v-else-if="
                     c.key === 'name' &&
-                    ['pool', 'screening', 'interviews', 'offers'].includes(route)
+                    ['pool', 'screening', 'deptscreening', 'interviews', 'offers'].includes(route)
                   "
                 >
                   <div class="v-cell-name">
@@ -463,7 +475,7 @@ defineExpose({ cell, columns });
                   <div class="v-cell-sub">{{ r.education }} · {{ r.years }} 年经验</div>
                 </template>
                 <template v-else-if="c.key === 'req'"
-                  >{{ reqName(r.req) }}<div class="v-cell-sub">{{ deptName(r.dept) }}</div>
+                  >{{ r.req ? reqName(r.req) : '未关联招聘需求' }}<div v-if="r.dept" class="v-cell-sub">{{ deptName(r.dept) }}</div>
                 </template>
                 <span
                   v-else-if="['status', 'stage', 'interviewStatus'].includes(c.key)"
@@ -478,7 +490,7 @@ defineExpose({ cell, columns });
                   >{{ capacity(r).label }}</span
                 >
                 <template v-else-if="c.key === 'capacity'">
-                  <div v-if="reqCapacity(r)" class="req-capacity-cell">
+                  <div v-if="['招聘中', '暂停'].includes(r.status) && reqCapacity(r)" class="req-capacity-cell">
                     <span
                       class="v-badge req-capacity-state"
                       :class="reqCapacity(r).over ? 'req-capacity-over' : 'req-capacity-ok'"
@@ -491,7 +503,7 @@ defineExpose({ cell, columns });
                         ? `在编 ${reqCapacity(r).staff} · 在途 ${reqCapacity(r).pending} / 编制 ${reqCapacity(r).limit}`
                         : `可用 ${reqCapacity(r).available} · 预计占用 ${reqCapacity(r).projected} / ${reqCapacity(r).limit}`
                     }}</div> </div
-                  ><span v-else>—</span>
+                  ><span v-else class="v-badge req-capacity-placeholder">—</span>
                 </template>
                 <template v-else-if="c.key === 'candidates'">
                   <button
@@ -503,7 +515,7 @@ defineExpose({ cell, columns });
                   <span v-else>—</span>
                 </template>
                 <template v-else-if="route === 'reqs' && c.key === 'job'"
-                  >{{ jobName(r.job) }}<div class="v-cell-sub">{{ r.name }}</div>
+                  >{{ jobName(r.job, r.historicalJobName) }}<div class="v-cell-sub">{{ r.name }}</div>
                 </template>
                 <template v-else-if="route === 'reqs' && c.key === 'count'"
                   >{{ r.count }}<div class="v-cell-sub">已入职 {{ reqArrived(r) }}</div>
@@ -535,7 +547,18 @@ defineExpose({ cell, columns });
                 <template
                   v-if="
                     editable &&
-                    ['orgs', 'jobs', 'grades', 'reqs', 'assets', 'screening'].includes(route)
+                    ['orgs', 'jobs', 'grades', 'reqs', 'assets'].includes(route) &&
+                    !(route === 'reqs' && r.historicalJobName && !r.job && r.status !== '已关闭')
+                  "
+                >
+                  <span class="v-sep" />
+                  <button class="v-link" @click="action('edit', r)">编辑</button>
+                </template>
+                <template
+                  v-if="
+                    editable &&
+                    ['screening', 'deptscreening'].includes(route) &&
+                    ['待 HR 筛选', '待部门筛选', '暂缓筛选'].includes(r.stage)
                   "
                 >
                   <span class="v-sep" />
@@ -546,7 +569,7 @@ defineExpose({ cell, columns });
                     >删除</button
                   ></template
                 >
-                <template v-if="route === 'jobs' && isHr">
+                <template v-if="route === 'jobs'">
                   <span class="v-sep" />
                   <button class="v-link" @click="action('audit', r)">日志</button>
                 </template>
@@ -585,8 +608,15 @@ defineExpose({ cell, columns });
                         : '安排面试'
                     }}</button
                   >
-                  <span class="v-sep" />
-                  <button class="v-link" @click="action('schedule', r)">改期</button>
+                  <template
+                    v-if="
+                      lastInterview(r)?.round === r.stage &&
+                      ['待面试', '待评价'].includes(lastInterview(r)?.status)
+                    "
+                  >
+                    <span class="v-sep" />
+                    <button class="v-link" @click="action('schedule', r)">改期</button>
+                  </template>
                 </template>
                 <template v-if="route === 'offers' && isHr">
                   <span class="v-sep" />
@@ -673,7 +703,7 @@ defineExpose({ cell, columns });
       aria-label="导入选项"
     >
       <button class="w-select-option" @click="action('import')">{{
-        route === 'roster' ? '导入花名册' : route === 'reqs' ? '导入钉钉招聘需求' : '导入数据'
+        route === 'roster' ? '导入花名册' : route === 'reqs' ? '导入招聘需求' : '导入数据'
       }}</button>
       <button class="w-select-option" @click="action('importRecords')">导入记录</button>
     </div>
@@ -769,14 +799,7 @@ defineExpose({ cell, columns });
           >×</button
         ><div class="w-column-reset-footer"
           ><button class="btn" @click="resetConfirmation = false">取消</button
-          ><button
-            class="btn pri-btn"
-            @click="
-              columnDraft = defaults.map((c) => ({ ...c }));
-              resetConfirmation = false;
-            "
-            >确认</button
-          ></div
+          ><button class="btn pri-btn" @click="resetColumns">确认</button></div
         ></section
       ></div
     >

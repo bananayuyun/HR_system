@@ -21,6 +21,7 @@ const headers = ref([]),
   sourceLines = ref([]),
   mapping = ref({});
 const mode = ref('skip'),
+  defaultOwnerId = ref(''),
   preview = ref(null),
   result = ref(null),
   error = ref('');
@@ -42,6 +43,15 @@ const columnOptions = computed(() => [
     value: String(value),
     label: `${value + 1}. ${label || '（空表头）'}`,
   })),
+]);
+const ownerOptions = computed(() => [
+  { value: '', label: '请选择默认 HR 负责人' },
+  ...(props.db.emps || [])
+    .filter((employee) => !employee.deleted && !['已离职', '待离职'].includes(employee.status))
+    .map((employee) => ({
+      value: employee.id,
+      label: `${employee.name}（${employee.id}）`,
+    })),
 ]);
 
 function normalizeHeader(value) {
@@ -235,11 +245,19 @@ async function chooseFile(event) {
   fileName.value = file.name;
   try {
     const buffer = await file.arrayBuffer();
-    if (!globalThis.crypto?.subtle)
-      throw new Error('当前连接无法计算文件校验值，请使用 HTTPS 或本机 localhost 地址访问。');
-    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buffer))]
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('');
+    let hash;
+    if (globalThis.crypto?.subtle) {
+      hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', buffer))]
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    } else {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await api(`/imports/${props.type}/hash`, { method: 'POST', body: form });
+      hash = response?.sha256;
+      if (!/^[a-f0-9]{64}$/.test(hash || ''))
+        throw new Error('服务器未返回有效的文件校验值。');
+    }
     let rows,
       sourceOffset = 0;
     if (/\.csv$/i.test(file.name)) {
@@ -312,6 +330,8 @@ function requestBody(validateOnly) {
   };
   if (props.employeeId !== undefined && props.employeeId !== null)
     body.employeeId = props.employeeId;
+  if (props.type === 'reqs' && defaultOwnerId.value)
+    body.defaultOwnerId = defaultOwnerId.value;
   return body;
 }
 function normalizeReport(response) {
@@ -447,6 +467,7 @@ watch(
     result.value = null;
     error.value = '';
     mode.value = 'skip';
+    defaultOwnerId.value = '';
     busy.value = false;
     busyLabel.value = '';
   },
@@ -476,7 +497,7 @@ onBeforeUnmount(() => {
           type === 'emps'
             ? '按公司内部花名册的 58 列自动匹配；按工号新增或更新。工作片区与工作所在地分别保存，部门和组别匹配已有组织。'
             : type === 'reqs'
-              ? '导入已有招聘需求表格，维护需求、岗位及面试负责人。'
+              ? '导入已有招聘需求表格，维护需求、岗位及面试负责人。未填写 HR 负责人时可在下方指定默认负责人。'
               : '使用模板整理数据后导入。'
         }}
         支持 Excel（.xlsx / .xls）和 CSV，单次最多 2,000 行。数据经服务端校验后写入数据库。</div
@@ -492,6 +513,17 @@ onBeforeUnmount(() => {
         />
         <span class="v-muted">文件不超过 20 MB；先核对校验结果，再确认导入。</span>
       </label>
+      <div v-if="type === 'reqs'" class="v-filter import-mode">
+        <label>默认 HR 负责人：</label>
+        <FieldControl
+          v-model="defaultOwnerId"
+          type="select"
+          label="默认 HR 负责人"
+          :options="ownerOptions"
+          :disabled="busy"
+          @change="invalidate"
+        />
+      </div>
       <div class="v-drawer-actions"
         ><button class="btn" :disabled="busy" @click="downloadTemplate">下载导入模板</button></div
       >

@@ -115,9 +115,14 @@ assert.ok(preview.rows[0].warnings.length >= 3);
 const firstImport = await admin.post('/imports/emps', importBody);
 assert.equal(firstImport.added, 1);
 const secondImport = await admin.post('/imports/emps', { ...importBody, mode: 'skip' });
-assert.equal(secondImport.skipped, 1);
+assert.equal(secondImport.duplicate, true);
 const thirdImport = await admin.post('/imports/emps', importBody);
-assert.equal(thirdImport.updated, 1);
+assert.equal(thirdImport.duplicate, true);
+const updatedImport = await admin.post('/imports/emps', {
+  ...importBody,
+  fileHash: crypto.createHash('sha256').update(fileHash + ':updated').digest('hex'),
+});
+assert.equal(updatedImport.updated, 1);
 const imported = await admin.get(`/emps/${rows[0].id}`);
 assert.equal(imported.grade, 'T2');
 assert.equal(String(imported.salaryBand), '6');

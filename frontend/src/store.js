@@ -5,9 +5,11 @@ export const user = ref(null);
 export const db = reactive({
   orgs: [],
   jobs: [],
+  jobHistory: [],
   grades: [],
   emps: [],
   reqs: [],
+  reqHistory: [],
   candidates: [],
   assets: [],
   baseSettings: { workRegion: [], workplace: [], contractCompany: [] },
@@ -19,7 +21,10 @@ export const notice = ref('');
 export const isHr = computed(() => user.value?.role === 'hr');
 export const menus = computed(() => {
   const list = user.value?.menus || [];
-  return Object.keys(routes).filter((k) =>
+  const order = isHr.value
+    ? Object.keys(routes)
+    : ['reqs', 'screening', 'interviews', 'offers', 'orgs', 'jobs'];
+  return order.filter((k) =>
     list.some((m) =>
       typeof m === 'string'
         ? [k, '/' + k].includes(m)
@@ -34,14 +39,14 @@ export function can(permission) {
 export function deptName(id) {
   return db.orgs.find((x) => x.id === id)?.name || '—';
 }
-export function jobName(id) {
-  return db.jobs.find((x) => x.id === id)?.name || '—';
+export function jobName(id, historicalName = '') {
+  return db.jobs.find((x) => x.id === id)?.name || db.jobHistory.find((x) => x.id === id)?.name || historicalName || '—';
 }
 export function empName(id) {
   return db.emps.find((x) => x.id === id)?.name || (id ? '人员不存在' : '未分配');
 }
 export function reqName(id) {
-  return db.reqs.find((x) => x.id === id)?.name || '—';
+  return db.reqs.find((x) => x.id === id)?.name || db.reqHistory.find((x) => x.id === id)?.name || '—';
 }
 export function within(id, parent) {
   if (!parent) return true;
@@ -112,6 +117,8 @@ export function capacity(row) {
 export const lastInterview = (row) => row?.interviews?.at(-1);
 export async function refresh() {
   const data = await api('/bootstrap');
+  if (Array.isArray(data?.jobs)) db.jobHistory = data.jobs;
+  if (Array.isArray(data?.reqs)) db.reqHistory = data.reqs;
   for (const key of Object.keys(db))
     if (data?.[key] !== undefined) {
       const value = data[key];
@@ -141,7 +148,12 @@ export async function refresh() {
     db.sequences = [...new Set(db.grades.map((g) => g.sequence).filter(Boolean))];
 }
 export function navigate(target) {
-  const next = menus.value.includes(target) ? target : menus.value[0] || 'roster';
+  const fallback = isHr.value ? 'roster' : 'screening';
+  const next = menus.value.includes(target)
+    ? target
+    : menus.value.includes(fallback)
+      ? fallback
+      : menus.value[0] || fallback;
   const proceed = () => {
     route.value = next;
     history.replaceState(null, '', '#/' + next);

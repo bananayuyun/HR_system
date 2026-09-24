@@ -81,8 +81,6 @@ public class ResumeService {
   @Transactional
   public Map<String, Object> create(Actor a, String data, MultipartFile file) {
     var body = hr.database().object(data);
-    HrService.requireText(body, "workRegion");
-    HrService.requireText(body, "workplace");
     var candidate = hr.saveInternal(a, "candidates", null, body, false);
     files.upload(a, "candidates", Db.str(candidate, "id"), file, "简历");
     return hr.get(a, "candidates", Db.str(candidate, "id"));

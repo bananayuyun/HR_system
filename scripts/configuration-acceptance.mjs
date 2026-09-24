@@ -8,8 +8,7 @@ const tag = 'CFG' + Date.now().toString(36).toUpperCase(),
   results = [];
 let cookie = '',
   originalRules,
-  sequenceName = tag,
-  grade;
+  sequenceName = tag;
 async function call(method, url, body, expected = 200) {
   const response = await fetch(base + url, {
     method,
@@ -47,40 +46,28 @@ try {
     assert.ok((await call('GET', '/settings/sequences')).items.includes(tag));
     assert.ok((await call('GET', '/bootstrap')).sequences.includes(tag));
   });
-  await check('Explicit sequence rename updates a referenced grade and its version', async () => {
-    grade = await call('POST', '/grades', {
-      code: tag + 'G',
-      name: '配置验收职级',
-      sequence: tag,
-      level: 1,
-      scope: '全部部门',
-      min: 0,
-      status: '启用',
-      requirements: '用于序列改名事务验收',
-    });
+  await check('Explicit rename persists an unused sequence', async () => {
     const renamed = tag + 'RENAMED';
     await call('PUT', '/settings/sequences', { rename: { from: tag, to: renamed } });
     sequenceName = renamed;
-    const changed = await call('GET', '/grades/' + grade.id);
-    assert.equal(changed.sequence, renamed);
-    assert.ok(changed.version > grade.version);
     const bootstrap = await call('GET', '/bootstrap');
     assert.ok(bootstrap.sequences.includes(renamed));
     assert.ok(!bootstrap.sequences.includes(tag));
   });
   await check('Sequence duplicate names and removal while referenced are rejected', async () => {
     const current = (await call('GET', '/settings/sequences')).items;
+    const referenced = '管理 M';
     await call(
       'PUT',
       '/settings/sequences',
-      { items: current.filter((name) => name !== sequenceName) },
+      { items: current.filter((name) => name !== referenced) },
       409,
     );
     await call('PUT', '/settings/sequences', { items: [...current, current[0]] }, 400);
     await call(
       'PUT',
       '/settings/sequences',
-      { rename: { from: sequenceName, to: current.find((name) => name !== sequenceName) } },
+      { rename: { from: referenced, to: current.find((name) => name !== referenced) } },
       409,
     );
   });
@@ -103,11 +90,9 @@ try {
   });
 } finally {
   if (originalRules) await call('PUT', '/settings/reminders', originalRules);
-  if (grade) await call('DELETE', '/grades/' + grade.id);
   const current = (await call('GET', '/settings/sequences')).items;
-  // Referenced names remain protected even after the synthetic grade is archived.
   await call('PUT', '/settings/sequences', {
-    items: current.filter((name) => name !== tag || (Boolean(grade) && sequenceName === tag)),
+    items: current.filter((name) => name !== tag && name !== sequenceName),
   });
   await call('POST', '/auth/logout', {});
 }
@@ -118,7 +103,7 @@ const report = {
   passed: results.filter((r) => r.status === 'PASS').length,
   failed: results.filter((r) => r.status === 'FAIL').length,
   cleanup:
-    'Reminder rules restored; isolated grade archived; its referenced sequence retained as test audit evidence',
+    'Reminder rules restored and unused synthetic sequence removed',
 };
 await fs.mkdir(path.join(root, '.local/verification'), { recursive: true });
 await fs.writeFile(

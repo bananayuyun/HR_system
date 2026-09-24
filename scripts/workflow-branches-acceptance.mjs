@@ -449,14 +449,10 @@ await check(
     db = await admin.get("/bootstrap");
     own = await manager.get("/bootstrap");
     rootOrg = db.orgs.find((o) => !o.parent);
-    // BootstrapData binds manager to the first active employee in main ORG_18, not
-    // the organization managerId or display name. Read-only SQL verified E0002 in
-    // this acceptance database. The override supports explicitly changed fixtures.
-    managerPerson = process.env.HR_MANAGER_EMPLOYEE_NO
-      ? own.emps.find((e) => e.id === process.env.HR_MANAGER_EMPLOYEE_NO)
-      : own.emps
-          .filter((e) => e.mainDept === ownOrg && active(e))
-          .sort((a, b) => a.dbId - b.dbId)[0];
+    // The isolated manager login is bound to E0002 by prepare-acceptance-database.ps1.
+    managerPerson = own.emps.find(
+      (e) => e.id === (process.env.HR_MANAGER_EMPLOYEE_NO || "E0002"),
+    );
     need(managerPerson, "Cannot resolve the seeded manager account employee");
     hrPerson = db.emps.find(
       (e) =>
@@ -907,7 +903,7 @@ await check(
 let file;
 await check(
   "roster",
-  "Upload persisted attachment and archive/restore preserves file and history",
+  "Upload persisted attachment and leave/reinstate preserves file and history",
   async () => {
     const bytes = Buffer.from(prefix + " persisted attachment");
     const form = new FormData();
@@ -922,11 +918,10 @@ await check(
       (await fresh("emps", employee)).files.some((f) => f.id === file.id),
     );
     const e = await fresh("emps", employee);
-    await admin.delete(`/emps/${e.id}`);
+    await act("emps", employee, "leave", { leaveDate: today });
     let r = await fresh("emps", employee);
-    assert.equal(r.deleted, true);
-    assert.equal(r.previousStatus, e.status);
-    await admin.post(`/emps/${e.id}/restore`, {});
+    assert.equal(r.status, "已离职");
+    await act("emps", employee, "reinstate", {});
     r = await fresh("emps", employee);
     assert.equal(r.status, e.status);
     assert.ok(r.files.some((f) => f.id === file.id));
@@ -1559,13 +1554,12 @@ await check(
 );
 await check(
   "roster",
-  "After asset release employee can leave, cannot directly revive, archive restores former status",
+  "After asset release employee can leave, cannot directly revive or use legacy delete",
   async () => {
     await act("emps", employee, "leave", { leaveDate: today });
     assert.equal((await fresh("emps", employee)).status, "已离职");
     await deniedUnchanged("emps", employee, { status: "正式" });
-    await admin.delete(`/emps/${employee.id}`);
-    await admin.post(`/emps/${employee.id}/restore`, {});
+    await admin.delete(`/emps/${employee.id}`, 400);
     const e = await fresh("emps", employee);
     assert.equal(e.status, "已离职");
     assert.equal(e.leaveDate, today);

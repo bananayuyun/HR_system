@@ -45,7 +45,7 @@ public class ApiController {
 
   @GetMapping({"/auth/me", "/me"})
   public Object me(HttpServletRequest req) {
-    return Map.of("user", actor(req).view());
+    return auth.me(req);
   }
 
   @PostMapping("/auth/logout")
@@ -63,7 +63,9 @@ public class ApiController {
 
   @GetMapping("/bootstrap")
   public Object bootstrap(HttpServletRequest req) {
-    return hr.bootstrap(actor(req));
+    var data = hr.bootstrap(actor(req));
+    data.put("user", auth.view(actor(req), req.getSession(false)));
+    return data;
   }
 
   @GetMapping("/{type:orgs|jobs|grades|emps|reqs|candidates|assets}")
@@ -198,8 +200,9 @@ public class ApiController {
 
   @GetMapping("/{type:emps|candidates|assets|reqs|orgs|jobs|grades}/{id}/audit")
   public Object audit(HttpServletRequest req, @PathVariable String type, @PathVariable String id) {
-    hr.auditor().require(actor(req), "audit:read");
-    var entity = hr.raw(actor(req), type, id, false);
+    Actor current = actor(req);
+    hr.auditor().require(current, type.equals("jobs") ? "jobs:read" : "audit:read");
+    var entity = hr.raw(current, type, id, false);
     return hr.auditEntries(type, Db.num(entity.get("id")));
   }
 
@@ -233,6 +236,12 @@ public class ApiController {
   public Object parse(
       HttpServletRequest req, @PathVariable String type, @RequestParam MultipartFile file) {
     return imports.parse(actor(req), type, file);
+  }
+
+  @PostMapping(value = "/imports/{type}/hash", consumes = "multipart/form-data")
+  public Object importHash(
+      HttpServletRequest req, @PathVariable String type, @RequestParam MultipartFile file) {
+    return imports.hash(actor(req), type, file);
   }
 
   @GetMapping("/settings/{key}")

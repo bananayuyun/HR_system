@@ -205,7 +205,7 @@ try {
     originalPreferences[key] = await api("GET", "/preferences/" + key);
 
   await run(
-    "All 11 routes, navigation search, collapse and refresh route restoration",
+    "All 12 routes, navigation search, collapse and refresh route restoration",
     async () => {
       for (const [route, label] of Object.entries(routes)) {
         await page
@@ -217,7 +217,11 @@ try {
       await page
         .getByRole("textbox", { name: "搜索菜单", exact: true })
         .fill("面试");
-      assert.equal(await page.locator(".v-nav a").count(), 1);
+      assert.equal(await page.locator(".v-nav a").count(), 12);
+      assert.equal(await page.locator(".v-nav-search-result").count(), 1);
+      await page.getByRole("button", { name: "招聘管理 / 面试管理" }).click();
+      await page.locator('.v-content[data-page="interviews"]').waitFor();
+      assert.equal(await page.getByLabel("搜索菜单", { exact: true }).inputValue(), "");
       await page
         .getByRole("textbox", { name: "搜索菜单", exact: true })
         .fill("");
@@ -260,9 +264,11 @@ try {
       await page
         .getByLabel("搜索菜单", { exact: true })
         .fill(prefix + "不存在菜单");
-      assert.equal(await page.locator(".v-nav a").count(), 0);
+      assert.equal(await page.locator(".v-nav a").count(), 12);
+      assert.equal(await page.locator(".v-nav-search-result").count(), 0);
+      await page.getByText("没有匹配的菜单", { exact: true }).waitFor();
       await page.getByLabel("搜索菜单", { exact: true }).fill("");
-      assert.equal(await page.locator(".v-nav a:visible").count(), 11);
+      assert.equal(await page.locator(".v-nav a:visible").count(), 12);
     },
   );
 
@@ -354,7 +360,7 @@ try {
       await goto("jobs");
       await page.getByRole("button", { name: "列设置", exact: true }).click();
       let popup = page.getByRole("dialog", { name: "列设置", exact: true });
-      await popup.getByLabel("显示序号", { exact: true }).uncheck();
+      await popup.getByLabel("显示岗位名称", { exact: true }).uncheck();
       await popup.getByRole("button", { name: "取消", exact: true }).click();
       assert.equal(
         await page.locator('th[data-list-key="__index"]').count(),
@@ -417,11 +423,14 @@ try {
       await popup
         .getByRole("button", { name: "恢复默认", exact: true })
         .click();
+      const resetSaved = page.waitForResponse(
+        (r) => r.url().endsWith('/preferences/jobs') && r.request().method() === 'PUT',
+      );
       await page
         .getByRole("dialog", { name: "确认恢复默认列配置?" })
         .getByRole("button", { name: "确认", exact: true })
         .click();
-      await popup.getByRole("button", { name: "确认", exact: true }).click();
+      assert.ok((await resetSaved).ok());
     },
   );
 
@@ -479,7 +488,7 @@ try {
         await page
           .locator("thead th[data-list-key]")
           .evaluateAll((nodes) => nodes.map((n) => n.dataset.listKey)),
-        preference.columns.filter((c) => c.show).map((c) => c.key),
+        ['__select', '__index', ...preference.columns.filter((c) => c.show).map((c) => c.key), '__actions'],
       );
       await popup.getByRole("button", { name: "取消", exact: true }).click();
     },
@@ -948,35 +957,38 @@ try {
   );
 
   await run(
-    "Archive confirmation and archive-view restore preserve the employee identity",
+    "Leave and reinstate preserve the employee identity",
     async () => {
       await goto("roster");
       await search(employee.id);
       await page
         .locator(".tbl tbody tr")
         .first()
-        .getByRole("button", { name: "删除", exact: true })
+        .getByRole("button", { name: "办理离职", exact: true })
         .click();
+      await page.getByRole("dialog", { name: "办理离职", exact: true })
+        .getByLabel("离职原因", { exact: true }).fill(prefix + "验收离职");
       await submit(
-        page.getByRole("dialog", { name: "归档员工档案", exact: true }),
-        "/emps/" + employee.id,
+        page.getByRole("dialog", { name: "办理离职", exact: true }),
+        "/emps/" + employee.id + "/actions/leave",
       );
-      assert.ok((await api("GET", "/emps/" + employee.id)).deletedAt);
+      assert.equal((await api("GET", "/emps/" + employee.id)).status, "已离职");
       await page
-        .getByRole("button", { name: "查看已归档", exact: true })
+        .getByRole("button", { name: "离职人员档案", exact: true })
         .click();
+      await search(employee.id);
       await page
         .locator("tbody tr")
         .filter({ hasText: employee.id })
-        .getByRole("button", { name: "恢复档案", exact: true })
+        .getByRole("button", { name: "复职", exact: true })
         .click();
       await submit(
-        page.getByRole("dialog", { name: "恢复员工档案", exact: true }),
-        "/emps/" + employee.id + "/restore",
+        page.getByRole("dialog", { name: "复职", exact: true }),
+        "/emps/" + employee.id + "/actions/reinstate",
       );
       const restored = await api("GET", "/emps/" + employee.id);
       assert.equal(restored.id, employee.id);
-      assert.ok(!restored.deletedAt);
+      assert.equal(restored.status, "正式");
     },
   );
 
@@ -1022,7 +1034,7 @@ try {
     async () => {
       for (const [route, title] of [
         ["roster", "导入花名册"],
-        ["reqs", "导入钉钉招聘需求"],
+        ["reqs", "导入招聘需求"],
         ["grades", "导入数据"],
         ["assets", "导入数据"],
       ]) {
@@ -1832,22 +1844,16 @@ try {
             .count(),
           0,
         );
-        await manager
-          .locator(".v-nav")
-          .getByRole("link", { name: "员工花名册", exact: true })
-          .click();
         assert.equal(
           await manager
-            .getByRole("button", { name: "导入菜单", exact: true })
+            .locator(".v-nav")
+            .getByRole("link", { name: "员工花名册", exact: true })
             .count(),
           0,
         );
-        assert.equal(
-          await manager
-            .getByRole("button", { name: "查看已归档", exact: true })
-            .count(),
-          0,
-        );
+        await manager.goto(base + "/#/roster");
+        await manager.locator(".v-content").waitFor();
+        assert.notEqual(await manager.locator(".v-content").getAttribute("data-page"), "roster");
         await manager.goto(base + "/#/settings");
         await manager.locator(".v-content").waitFor();
         assert.notEqual(

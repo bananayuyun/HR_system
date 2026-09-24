@@ -132,6 +132,7 @@ public class HrService {
     out.put("user", a.view());
     for (String t : List.of("orgs", "jobs", "grades", "emps", "reqs", "candidates", "assets"))
       out.put(t, list(a, t, !t.equals("grades")));
+    if (!a.can("roster:read")) out.put("emps", employeeDirectory(a));
     out.put("sequences", sequences());
     out.put("baseSettings", settings());
     out.put(
@@ -156,6 +157,24 @@ public class HrService {
         "SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(extra,'$.sequence')) FROM grade WHERE"
             + " deleted_at IS NULL AND JSON_EXTRACT(extra,'$.sequence') IS NOT NULL",
         String.class);
+  }
+
+  // Recruitment forms need a small people picker even when the roster is unavailable.
+  private List<Map<String, Object>> employeeDirectory(Actor a) {
+    Set<Long> allowed = scope.orgs(a);
+    if (allowed.isEmpty()) return List.of();
+    String placeholders = String.join(",", Collections.nCopies(allowed.size(), "?"));
+    return db.jdbc.queryForList(
+            "SELECT e.employee_no id,e.name,o.code dept,j.code job,"
+                + " CASE e.status WHEN 'PROBATION' THEN '试用'"
+                + " WHEN 'PENDING_LEAVE' THEN '待离职' ELSE '正式' END status"
+                + " FROM employee e JOIN org_department o ON o.id=e.org_id"
+                + " LEFT JOIN job_position j ON j.id=e.job_id"
+                + " LEFT JOIN org_department m ON m.id=e.main_org_id"
+                + " WHERE e.deleted_at IS NULL AND e.status IN ('PROBATION','ACTIVE','PENDING_LEAVE')"
+                + " AND (e.org_id IN (" + placeholders + ")"
+                + " OR m.name REGEXP '人事|人力|行政') ORDER BY e.name,e.id",
+            allowed.toArray());
   }
 
   public List<Map<String, Object>> list(Actor a, String type, boolean archived) {
@@ -240,7 +259,9 @@ public class HrService {
   }
 
   public Map<String, Object> get(Actor a, String type, String code) {
-    audit.require(a, EntitySchema.get(type).readPermission());
+    if (!type.equals("candidates") ||
+        !(a.can("screening:read") || a.can("interviews:read") || a.can("offers:read")))
+      audit.require(a, EntitySchema.get(type).readPermission());
     var row = raw(a, type, code, false);
     var result = view(type, row);
     if (a.can("audit:read")) result.put("audit", auditEntries(type, Db.num(row.get("id"))));
@@ -453,13 +474,13 @@ public class HrService {
       case "jobs" -> {
         v.put("dept", code("orgs", raw.get("org_id")));
         v.put("status", "ACTIVE".equals(raw.get("status")) ? "启用" : "停用");
-        v.putIfAbsent("sequence", "技术序列 T");
+        v.putIfAbsent("sequence", "技术 T");
       }
       case "grades" -> {
         v.put("code", raw.get("code"));
         v.put("status", "ACTIVE".equals(raw.get("status")) ? "启用" : "停用");
         v.putIfAbsent("scope", "全部部门");
-        v.putIfAbsent("sequence", "技术序列 T");
+        v.putIfAbsent("sequence", "技术 T");
       }
       case "emps" -> {
         v.put("employeeNo", v.get("id"));
@@ -514,10 +535,11 @@ public class HrService {
       }
       case "candidates" -> {
         var req = db.one("SELECT * FROM recruitment_request WHERE id=?", raw.get("request_id"));
-        v.put("req", req.get("request_no"));
-        v.put("dept", code("orgs", req.get("org_id")));
-        v.put("job", code("jobs", req.get("job_id")));
-        v.put("stage", EntitySchema.to(EntitySchema.CAND_STAGE, raw.get("stage")));
+        v.put("req", req == null ? "" : req.get("request_no"));
+        v.put("dept", req == null ? "" : code("orgs", req.get("org_id")));
+        v.put("job", req == null ? "" : code("jobs", req.get("job_id")));
+        v.put("historicalJobName", req == null ? "" : db.object(req.get("extra")).getOrDefault("historicalJobName", ""));
+        v.put("stage", req == null ? "待关联需求" : EntitySchema.to(EntitySchema.CAND_STAGE, raw.get("stage")));
         if (Boolean.TRUE.equals(v.get("held"))
             && List.of("HR_SCREEN", "DEPT_SCREEN").contains(raw.get("stage")))
           v.put("stage", "暂缓筛选");
@@ -533,16 +555,18 @@ public class HrService {
         v.put(
             "screener",
             screeners.stream().map(p -> Db.str(p, "name")).collect(Collectors.joining("、")));
-        v.put("location", v.getOrDefault("workRegion", req.get("location")));
-        v.put("company", v.getOrDefault("contractCompany", req.get("company")));
-        if (Db.text(v.get("company")).isBlank()) v.put("company", req.get("company"));
+        v.put("location", v.getOrDefault("workRegion", req == null ? "" : req.get("location")));
+        v.put("company", v.getOrDefault("contractCompany", req == null ? "" : req.get("company")));
+        if (Db.text(v.get("company")).isBlank() && req != null) v.put("company", req.get("company"));
         v.put("created", stringDate(raw.get("created_at")).substring(0, 10));
         v.put("screeningStep", "DEPT_SCREEN".equals(raw.get("stage")) ? "dept" : "hr");
         v.put("history", candidateHistory(Db.num(raw.get("id"))));
         v.put("interviews", interviews(Db.num(raw.get("id"))));
         v.put("files", fileViews("candidates", Db.num(raw.get("id"))));
-        v.putIfAbsent("company", req.get("company"));
-        v.putIfAbsent("contractCompany", req.get("company"));
+        if (req != null) {
+          v.putIfAbsent("company", req.get("company"));
+          v.putIfAbsent("contractCompany", req.get("company"));
+        }
         var entry = db.one("SELECT * FROM onboarding_record WHERE candidate_id=?", raw.get("id"));
         if (entry != null) {
           v.put("onboard", stringDate(entry.get("planned_onboard_date")));
@@ -640,7 +664,7 @@ public class HrService {
                   "operator",
                   r.get("display_name"),
                   "editable",
-                  Boolean.TRUE.equals(m.get("manual")));
+                  true);
             })
         .toList();
   }
@@ -756,9 +780,19 @@ public class HrService {
       Actor a, String type, String code, Map<String, Object> body, boolean importing,
       boolean reinstating, boolean leaving) {
     var spec = EntitySchema.get(type);
-    audit.require(a, spec.writePermission());
+    boolean managerCandidateEdit = type.equals("candidates") && !a.all()
+        && a.can("screening:department") && code != null && !importing;
+    if (!managerCandidateEdit) audit.require(a, spec.writePermission());
     if (type.equals("orgs")) lockOrgTree();
     var previous = code == null ? null : raw(a, type, code, true);
+    if (managerCandidateEdit) {
+      if (!Set.of("HR_SCREEN", "DEPT_SCREEN", "FIRST_INTERVIEW", "SECOND_INTERVIEW")
+          .contains(Db.str(previous, "stage")))
+        throw new ApiException(403, "当前阶段由 HR 维护候选信息。");
+      if (!Set.of("name", "phone", "email", "education", "school", "years", "tags", "notes", "version")
+          .containsAll(body.keySet()))
+        throw new ApiException(403, "部门主管只能修改候选人基本信息。");
+    }
     if (previous != null && previous.get("deleted_at") != null)
       throw ApiException.conflict("记录已删除，不能编辑。");
     if (previous != null && !importing) version(previous, body);
@@ -873,11 +907,14 @@ public class HrService {
         requestValues(a, merged, values, previous);
       }
       case "candidates" -> {
-        long request = ref("reqs", merged.get("req"), true);
-        var r = db.one("SELECT * FROM recruitment_request WHERE id=? FOR UPDATE", request);
-        scope.check(a, Db.num(r.get("org_id")));
-        if (!"OPEN".equals(r.get("status")) && previous == null)
-          throw ApiException.conflict("仅招聘中的需求可以录入简历。");
+        Long request = Db.str(merged, "req").isBlank() ? null : ref("reqs", merged.get("req"), true);
+        if (request == null && !a.all()) throw new ApiException(403, "未关联招聘需求的简历仅限 HR 管理员维护。");
+        var r = request == null ? null : db.one("SELECT * FROM recruitment_request WHERE id=? FOR UPDATE", request);
+        if (r != null) {
+          scope.check(a, Db.num(r.get("org_id")));
+          if (!"OPEN".equals(r.get("status")) && (previous == null || previous.get("request_id") == null))
+            throw ApiException.conflict("仅招聘中的需求可以关联简历。");
+        }
         values.put("request_id", request);
         if (previous == null) {
           values.put("stage", "HR_SCREEN");
@@ -887,11 +924,11 @@ public class HrService {
           if (body.containsKey("stage")
               && !Objects.equals(body.get("stage"), view(type, previous).get("stage")))
             throw ApiException.bad("阶段变更必须通过筛选、面试或入职接口。");
-          if (request != Db.num(previous.get("request_id")))
+          if (previous.get("request_id") != null && !Objects.equals(request, Db.num(previous.get("request_id"))))
             throw ApiException.bad("候选人的招聘需求不能直接改绑。");
         }
         if (db.jdbc.queryForObject(
-                "SELECT COUNT(*) FROM candidate WHERE request_id=? AND phone=? AND deleted_at IS"
+                "SELECT COUNT(*) FROM candidate WHERE request_id <=> ? AND phone=? AND deleted_at IS"
                     + " NULL AND id<>?",
                 Integer.class,
                 request,
@@ -1376,7 +1413,17 @@ public class HrService {
 
   void requestValues(
       Actor a, Map<String, Object> m, Map<String, Object> values, Map<String, Object> previous) {
-    long org = ref("orgs", m.get("dept"), true), job = ref("jobs", m.get("job"), true);
+    if (previous != null && previous.get("job_id") == null)
+      throw ApiException.conflict("历史招聘需求的岗位已删除，不能编辑。");
+    long org = ref("orgs", m.get("dept"), true);
+    var previousJob =
+        previous == null
+            ? null
+            : db.one("SELECT code FROM job_position WHERE id=?", previous.get("job_id"));
+    long job =
+        previousJob != null && Db.text(previousJob.get("code")).equals(Db.text(m.get("job")))
+            ? Db.num(previous.get("job_id"))
+            : ref("jobs", m.get("job"), true);
     scope.check(a, org);
     activeOrg(org);
     var j = db.one("SELECT * FROM job_position WHERE id=? FOR UPDATE", job);
@@ -1700,12 +1747,8 @@ public class HrService {
                   Integer.class,
                   id)
               > 0) throw ApiException.conflict("职级仍有关联员工，不能归档。");
-      if (type.equals("reqs")
-          && db.jdbc.queryForObject(
-                  "SELECT COUNT(*) FROM candidate WHERE request_id=? AND deleted_at IS NULL",
-                  Integer.class,
-                  id)
-              > 0) throw ApiException.conflict("需求仍有关联候选人，请关闭需求保留招聘记录。");
+      if (type.equals("reqs") && !"CLOSED".equals(r.get("status")))
+        throw ApiException.conflict("请先关闭招聘需求，再删除需求记录。");
       if (type.equals("assets") && r.get("owner_employee_id") != null)
         throw ApiException.conflict("领用资产须先归还，才能归档。");
       if (type.equals("candidates")

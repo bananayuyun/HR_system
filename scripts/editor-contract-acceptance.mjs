@@ -69,7 +69,7 @@ for (const [workType, code] of [['劳务派遣', 'LABOR_DISPATCH'], ['其它', '
     const reread = await call('GET', '/emps/' + employeeB.id);
     assert.equal(reread.workType, workType);
     const logs = await call('GET', '/emps/' + employeeB.id + '/audit');
-    assert.ok(logs.some(log => log.action === 'UPDATE' && log.changes?.some(change => change.field === 'employee_type' && change.label === '用工类型' && change.before === before.workType && change.after === workType)), 'Canonical work-type audit change must preserve its before/after display labels.');
+    assert.ok(logs.some(log => log.action === '资料变更' && log.changes?.some(change => change.field === 'employee_type' && change.label === '用工类型' && change.before === before.workType && change.after === workType)), 'Canonical work-type audit change must preserve its before/after display labels.');
     return {employee:after.id,workType:reread.workType,auditBefore:before.workType,auditAfter:workType,databaseCode:code};
   });
 }

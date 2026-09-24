@@ -20,8 +20,9 @@ public record Actor(
   }
 
   public Map<String, Object> view() {
-    var menus =
-        List.of(
+    var allowedMenus =
+        roles.contains("HR_ADMIN")
+            ? List.of(
                 "roster",
                 "orgs",
                 "jobs",
@@ -30,11 +31,18 @@ public record Actor(
                 "reqs",
                 "pool",
                 "screening",
+                "deptscreening",
                 "interviews",
                 "offers",
                 "assets")
-            .stream()
-            .filter(m -> can(m + ":read"))
+            : List.of("reqs", "screening", "interviews", "offers", "orgs", "jobs");
+    var menus =
+        allowedMenus.stream()
+            .filter(
+                m ->
+                    m.equals("deptscreening")
+                        ? can("screening:read") && can("screening:department")
+                        : can(m + ":read"))
             .toList();
     return Db.map(
         "id",

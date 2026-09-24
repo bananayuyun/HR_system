@@ -11,6 +11,7 @@ const busy = ref(false),
   error = ref(''),
   form = ref(),
   frame = ref(),
+  confirmDelete = ref(false),
   initial = ref('');
 const assetMode = ref('基本信息');
 const today = new Date().toLocaleDateString('sv-SE');
@@ -193,7 +194,9 @@ function options(field) {
     return !data.value.dept
       ? []
       : field.options.filter((o) => {
-          const j = db.jobs.find((j) => j.id === o.value);
+          const j =
+            db.jobs.find((j) => j.id === o.value) ||
+            (props.row?.job === o.value ? db.jobHistory.find((job) => job.id === o.value) : null);
           return (
             j &&
             (props.type === 'reqs' ? within(j.dept, data.value.dept) : j.dept === data.value.dept)
@@ -306,6 +309,9 @@ const dirty = computed(
     JSON.stringify(data.value) !== initial.value ||
     JSON.stringify(workHistory.value) !== JSON.stringify(props.row?.workHistory || []),
 );
+const historicalRequest = computed(
+  () => props.type === 'reqs' && !!props.row?.historicalJobName && !props.row?.job,
+);
 const wide = computed(
   () =>
     !props.section &&
@@ -342,6 +348,7 @@ const capacity = computed(() =>
   props.type === 'reqs' ? reqCapacity(props.row, data.value) : null,
 );
 async function save() {
+  if (historicalRequest.value) return;
   error.value = '';
   if (!form.value.reportValidity()) return;
   for (const [, fields] of sections.value)
@@ -431,6 +438,23 @@ async function save() {
     busy.value = false;
   }
 }
+async function removeRequest() {
+  if (props.type !== 'reqs' || !props.row || props.row.status !== '已关闭') return;
+  busy.value = true;
+  error.value = '';
+  try {
+    await api('/reqs/' + encodeURIComponent(props.row.id), {
+      method: 'DELETE',
+      body: { version: props.row.version },
+    });
+    emit('saved', '招聘需求已删除');
+  } catch (e) {
+    error.value = e.message;
+    confirmDelete.value = false;
+  } finally {
+    busy.value = false;
+  }
+}
 </script>
 <template>
   <DialogFrame
@@ -454,6 +478,9 @@ async function save() {
       ></div
     >
     <form ref="form" id="edit-form" @submit.prevent="save">
+      <div v-if="historicalRequest" class="v-hint req-historical-hint"
+        >原岗位已删除，此历史招聘需求不能修改。已关闭的需求可在底部删除。</div
+      >
       <p v-if="type === 'assets' && assetMode !== '基本信息'">{{ row.id }} · {{ row.model }}</p>
       <template v-if="isHistory"
         ><div v-for="(r, i) in workHistory" :key="i" class="form-section"
@@ -500,7 +527,13 @@ async function save() {
                   class="required"
                   >*</span
                 ><i v-else-if="field.required">*</i>{{ field.label }}</label
-              ><FieldControl
+              ><input
+                v-if="historicalRequest && field.key === 'job'"
+                class="inp"
+                :value="row.historicalJobName"
+                disabled
+              /><FieldControl
+                v-else
                 v-model="data[field.key]"
                 v-bind="field"
                 :name="field.key"
@@ -513,13 +546,14 @@ async function save() {
                 :readonly="!!row && ['id', 'code'].includes(field.key)"
                 :disabled="
                   busy ||
+                  historicalRequest ||
                   (type === 'assets' && field.key === 'owner' && data.public === '是') ||
                   (type === 'emps' && sensitiveFields.has(field.key) && !can('emps:sensitive'))
                 "
               /><span v-if="field.help" class="help">{{ field.help }}</span></div
             ></div
-          ><div v-if="type === 'reqs' && index === 0" id="req-capacity-check"
-            ><section v-if="capacity" class="req-capacity-panel"
+          ><div v-if="type === 'reqs' && index === 0 && capacity" id="req-capacity-check"
+            ><section class="req-capacity-panel"
               ><h4 class="sec-h">编制校验</h4
               ><div class="req-capacity-metrics"
                 ><span
@@ -539,12 +573,7 @@ async function save() {
               ><div v-else class="v-hint req-capacity-success"
                 ><b>可招聘。</b>预计占用 {{ capacity.projected }} /
                 {{ capacity.headcount }} 个岗位编制。</div
-              ></section
-            ><div v-else class="v-hint">{{
-              data.dept
-                ? '已按需求部门筛选岗位。选择岗位后，将依据岗位管理中的岗位编制实时校验。'
-                : '请先选择需求部门，系统将只展示该部门及下级组织配置的岗位。'
-            }}</div></div
+              ></section></div
           ></section
         ></template
       >
@@ -553,10 +582,35 @@ async function save() {
       >
     </form>
     <template #footer="{ requestClose }"
-      ><button class="btn" :disabled="busy" @click="requestClose">取消</button
-      ><button class="btn pri-btn" :disabled="busy" @click="save">{{
-        busy ? '保存中…' : assetMode === '基本信息' ? '确定' : '确认' + assetMode
-      }}</button></template
+      ><template v-if="confirmDelete"
+        ><span class="req-delete-confirm" role="status"
+          >确定删除此招聘需求？关联候选人的招聘历史会保留。<template v-if="dirty"
+            >未保存的修改将丢弃。</template
+          ></span
+        ><button class="btn" :disabled="busy" @click="confirmDelete = false">返回编辑</button
+        ><button class="btn danger" :disabled="busy" @click="removeRequest">{{
+          busy ? '删除中…' : '确认删除'
+        }}</button></template
+      ><template v-else
+        ><template v-if="type === 'reqs' && row"
+          ><div class="req-delete-action"
+            ><button
+              class="btn danger"
+              :disabled="busy || row.status !== '已关闭'"
+              :title="row.status !== '已关闭' ? '请先将状态改为已关闭并保存' : '删除招聘需求'"
+              @click="confirmDelete = true"
+              >删除</button
+            ><span v-if="row.status !== '已关闭'" class="req-delete-help"
+              >先关闭并保存后可删除</span
+            ></div
+          ></template
+        ><button class="btn" :disabled="busy" @click="requestClose">{{
+          historicalRequest ? '关闭' : '取消'
+        }}</button
+        ><button v-if="!historicalRequest" class="btn pri-btn" :disabled="busy" @click="save">{{
+          busy ? '保存中…' : assetMode === '基本信息' ? '确定' : '确认' + assetMode
+        }}</button></template
+      ></template
     >
   </DialogFrame>
 </template>
